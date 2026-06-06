@@ -1,0 +1,91 @@
+# Backend project metadata and tooling configuration.
+# NOTE: Loomis is pre-alpha (design stage). The `src/loomis` package does not
+# exist yet; this file is the agreed-upon skeleton so contributors share one
+# toolchain (see docs/adr/0010-python-tooling.md). Dependencies are listed as
+# intent and will be pinned via uv.lock as code lands.
+#
+# PLANNED RELOCATION: when scaffolding lands this file moves to `backend/pyproject.toml`
+# (the Python backend). The frontend lives in `web/` with its own package.json.
+# See docs/04-system-architecture.md §12 and docs/adr/0003-frontend-vue-spa.md.
+# FastAPI/uvicorn will join the dependency list (the REST/WebSocket API).
+
+[project]
+name = "loomis"
+version = "0.0.0"
+description = "Local-first voice lifelogger: auto-backup, transcribe, diarize, and summarize recordings."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "kevin" }]
+keywords = ["lifelog", "transcription", "diarization", "whisper", "local-first", "voice"]
+
+# Planned runtime dependencies (uncomment/pin as the codebase is built):
+dependencies = [
+  # "pydantic>=2",
+  # "pydantic-settings>=2",
+  # "fastapi",          # REST/WebSocket API      (ADR-0003)
+  # "uvicorn",          # ASGI server             (ADR-0003)
+  # "whisperx",         # STT + alignment + diar  (ADR-0002 / 0007)
+  # "psutil",           # removable-volume polling(ADR-0011)
+  # "httpx",            # LLM/provider HTTP        (ADR-0005)
+]
+
+[project.optional-dependencies]
+# Optional features keep the base install lean.
+cloud   = []          # rclone is an external binary, not a Python dep (ADR-0004)
+gpu     = []          # CUDA-specific extras
+windows = [
+  # "pywin32",        # WMI / WM_DEVICECHANGE native USB events (ADR-0011)
+]
+
+[project.scripts]
+# Planned entry point:
+# loomis = "loomis.cli:main"
+
+[project.urls]
+Documentation = "https://github.com/kevin/loomis/tree/main/docs"
+Source        = "https://github.com/kevin/loomis"
+
+# ── Dev toolchain (managed by uv) ───────────────────────────────────────
+[dependency-groups]
+dev = [
+  # "ruff",
+  # "mypy",
+  # "pytest",
+  # "pytest-cov",
+  # "pre-commit",
+]
+
+# ── Build (enable once src/loomis exists) ───────────────────────────────
+# [build-system]
+# requires = ["hatchling"]
+# build-backend = "hatchling.build"
+
+# ── Ruff: lint + format ─────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]   # incl. isort, pyupgrade, bugbear, bandit-ish
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]   # allow assert in tests
+
+# ── mypy: strict typing ─────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_redundant_casts = true
+
+# ── pytest ──────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+# ── coverage ────────────────────────────────────────────────────────────
+[tool.coverage.run]
+branch = true
+source = ["loomis"]

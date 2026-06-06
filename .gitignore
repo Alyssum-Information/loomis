@@ -1,0 +1,58 @@
+# ── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+
+# ── Environments / tooling ──────────────────────────────────────────────
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+# uv keeps uv.lock tracked; ignore only local caches
+.uv/
+
+# ── Frontend (web/ — Vue + Vite) ────────────────────────────────────────
+node_modules/
+web/dist/
+web/.vite/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── IDE / OS ────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── Loomis runtime data (never commit user recordings/transcripts/db) ───
+# Default data_dir is outside the repo (~/.loomis), but guard common spots:
+loomis.db
+loomis.db-wal
+loomis.db-shm
+/data/
+/library/
+/transcripts/
+/diary/
+/meetings/
+/staging/
+/quarantine/
+/logs/
+config.toml          # user config; config.example.toml IS tracked
+*.opus
+*.wav
+*.mp3
+*.m4a

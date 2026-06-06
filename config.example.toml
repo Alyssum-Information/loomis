@@ -1,0 +1,73 @@
+# Loomis example configuration.
+# Copy to your data dir as config.toml and edit. Defaults are LOCAL-FIRST:
+# with this file unedited, Loomis makes NO network connections.
+# Full reference: docs/06-configuration.md
+# Override any value via env: LOOMIS_<SECTION>__<KEY>  (e.g. LOOMIS_LLM__PROVIDER)
+
+[core]
+data_dir  = "~/.loomis"
+log_level = "INFO"
+timezone  = "local"          # used to group recordings into "calendar days"
+
+[api]                        # backend REST/WebSocket server (FastAPI); web/ SPA talks to it
+host         = "127.0.0.1"   # 0.0.0.0 exposes on your LAN (opt-in, requires a token)
+port         = 8080
+cors_origins = []            # extra allowed origins, e.g. "http://localhost:5173" (Vite dev)
+serve_spa    = true          # serve the built web/ SPA at "/"
+open_browser = true
+# When LAN-exposed, set a token in the environment (never in this file):
+#   LOOMIS_API__TOKEN=...
+
+[backup]
+poll_interval_s          = 3
+staging_dir              = "staging"
+verify_hash              = "sha256"        # integrity gate before source deletion
+auto_delete_after_backup = false           # delete from device only after verified copy
+transcode_policy         = "keep_original" # keep_original | transcode_keep | transcode_only
+
+[transcode]
+codec       = "opus"
+bitrate     = "16k"          # 12k–24k typical for speech
+application = "voip"
+ffmpeg_path = "ffmpeg"
+
+[stt]
+engine       = "whisperx"
+model        = "large-v3"    # use medium/small on CPU-only machines
+device       = "auto"        # auto | cuda | cpu
+compute_type = "auto"
+language     = "auto"        # or force, e.g. "zh"
+
+[diarization]
+provider     = "pyannote"
+min_speakers = 1
+max_speakers = 0             # 0 = auto
+
+[speaker_id]
+match_threshold    = 0.65
+margin             = 0.10
+new_identity_below = 0.45
+vector_backend     = "memory"   # memory | sqlite-vec
+
+[llm]
+provider    = "ollama"          # ollama (default) | openai | anthropic | gemini
+model       = "llama3.1:8b"
+ollama_host = "http://127.0.0.1:11434"
+# For cloud providers, set the key in the environment, NOT here:
+#   LOOMIS_LLM__API_KEY=...
+summary_language = "auto"
+
+[summaries]
+diary_day_settle_minutes = 30
+ambiguous_bias           = "diary"
+
+[cloud]
+enabled       = false           # opt-in; nothing leaves the machine until true
+rclone_path   = "rclone"
+schedule_cron = ""              # empty = manual sync only
+
+# Add one block per rclone remote you've configured:
+# [[cloud.remotes]]
+# name      = "onedrive"
+# scope     = ["audio", "markdown"]   # audio | markdown | db
+# direction = "push"                  # push-only; never deletes local source
