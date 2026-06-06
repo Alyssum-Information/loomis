@@ -1,48 +1,26 @@
-# ── Python ──────────────────────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
-*.so
+# Root .gitignore — global / cross-cutting only.
+# Language tooling lives in each subproject:
+#   backend/.gitignore  (Python: .venv, caches, build, …)
+#   web/.gitignore      (Node: node_modules, dist, caches, …)
 
-# ── Environments / tooling ──────────────────────────────────────────────
-.venv/
-venv/
-.env
-.env.*
-!.env.example
-.mypy_cache/
-.ruff_cache/
-.pytest_cache/
-.coverage
-htmlcov/
-# uv keeps uv.lock tracked; ignore only local caches
-.uv/
-
-# ── Frontend (web/ — Vue + Vite) ────────────────────────────────────────
-node_modules/
-web/dist/
-web/.vite/
-.vite/
-*.tsbuildinfo
-npm-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# ── IDE / OS ────────────────────────────────────────────────────────────
+# ── IDE ─────────────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
+
+# ── OS ──────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# ── Loomis runtime data (never commit user recordings/transcripts/db) ───
-# Default data_dir is outside the repo (~/.loomis), but guard common spots:
-loomis.db
-loomis.db-wal
-loomis.db-shm
+# ── Global env / secrets ────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Loomis runtime data — privacy guard ─────────────────────────────────
+# Default data_dir is ~/.loomis (outside the repo). These guard the repo root
+# in case data_dir is pointed here, so recordings/DB/transcripts are never
+# committed. config.example.toml IS tracked; a real config.toml is not.
 /data/
 /library/
 /transcripts/
@@ -51,7 +29,10 @@ loomis.db-shm
 /staging/
 /quarantine/
 /logs/
-config.toml          # user config; config.example.toml IS tracked
+loomis.db
+loomis.db-wal
+loomis.db-shm
+config.toml
 *.opus
 *.wav
 *.mp3
