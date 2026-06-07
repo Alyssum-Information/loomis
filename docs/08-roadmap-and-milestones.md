@@ -29,13 +29,15 @@ Design docs, ADRs, and OSS project files. No application code yet.
 > Exit: no data-loss path; re-import idempotent. **Met.**
 > Native USB events (WMI/pyudev) remain a later optimisation over the poll baseline.
 
-## M2 — Transcription & transcripts
+## M2 — Transcription & transcripts ✅
 *Goal: every imported recording becomes a searchable transcript.*
 [features/02](features/02-audio-compression.md), [features/03](features/03-transcription.md)
-- Durable job queue + worker pool
-- WhisperX integration, GPU/CPU auto — FR-4.1–4.5
-- Transcript + segment persistence
-- Optional Opus transcode + validation — FR-3.1–3.4
+- ✅ Durable job queue + worker pool (atomic claim, retry/park, crash-reclaim) — 04 §7
+- ✅ Swappable `STTEngine` (WhisperX, GPU/CPU auto, lazy load; `null` for offline/CI) — FR-4.1–4.5
+- ✅ Transcript + segment persistence (`transcripts/<id>.json` + DB; idempotent) — FR-4.3
+- ✅ Optional Opus transcode + validation, gated source delete — FR-3.1–3.4
+- ✅ CLI runner: `loomis worker [--once] [--types ...]`
+> Diarization stays in M3; after `stt` the recording is marked done for now.
 
 ## M3 — Speakers
 *Goal: know who spoke, across recordings.*

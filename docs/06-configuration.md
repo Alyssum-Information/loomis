@@ -56,11 +56,18 @@ application = "voip"
 ffmpeg_path = "ffmpeg"
 
 [stt]
-engine = "whisperx"
+engine = "whisperx"             # whisperx | null  (null = offline/dev stub, no GPU deps)
 model = "large-v3"
 device = "auto"                 # auto | cuda | cpu
 compute_type = "auto"
 language = "auto"               # auto-detect; or force e.g. "zh"
+
+[jobs]                          # durable pipeline job runner (04 §7)
+concurrency = 1                 # GPU-heavy steps serialize by default
+poll_interval_s = 1.0
+max_attempts = 3                # attempts beyond this park the job (dead-letter)
+lease_seconds = 1800           # reclaim a 'running' job idle longer than this; must
+                                # exceed the slowest step (no heartbeat yet)
 
 [diarization]
 provider = "pyannote"
