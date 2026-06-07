@@ -69,6 +69,37 @@ class BackupSettings(BaseModel):
     audio_globs: list[str] = Field(default_factory=lambda: list(_DEFAULT_AUDIO_GLOBS))
 
 
+class SttSettings(BaseModel):
+    """Speech-to-text engine selection (see docs/features/03, ADR-0002)."""
+
+    engine: str = "whisperx"  # whisperx | null (null = offline/dev stub, no GPU deps)
+    model: str = "large-v3"
+    device: str = "auto"  # auto | cuda | cpu
+    compute_type: str = "auto"  # auto | float16 | int8 | ...
+    language: str = "auto"  # auto-detect, or force e.g. "zh"
+
+
+class TranscodeSettings(BaseModel):
+    """Opus transcode parameters (see docs/features/02, ADR-0008)."""
+
+    codec: str = "opus"
+    bitrate: str = "16k"
+    application: str = "voip"
+    ffmpeg_path: str = "ffmpeg"
+    ffprobe_path: str = "ffprobe"
+
+
+class JobsSettings(BaseModel):
+    """Durable job runner: pool size, polling, retry, and crash-reclaim policy."""
+
+    concurrency: int = 1  # GPU-heavy steps serialize by default (04 §7)
+    poll_interval_s: float = 1.0
+    max_attempts: int = 3  # attempts beyond this park the job (dead-letter)
+    # A 'running' job idle longer than this is treated as crashed and reclaimed.
+    # No heartbeat yet, so this MUST exceed the slowest step (CPU STT can be minutes).
+    lease_seconds: int = 1800
+
+
 class Settings(BaseSettings):
     """Root settings object. Access via :func:`get_settings`."""
 
@@ -81,6 +112,9 @@ class Settings(BaseSettings):
     core: CoreSettings = Field(default_factory=CoreSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     backup: BackupSettings = Field(default_factory=BackupSettings)
+    stt: SttSettings = Field(default_factory=SttSettings)
+    transcode: TranscodeSettings = Field(default_factory=TranscodeSettings)
+    jobs: JobsSettings = Field(default_factory=JobsSettings)
 
     @classmethod
     def settings_customise_sources(

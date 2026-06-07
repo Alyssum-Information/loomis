@@ -79,9 +79,37 @@ CREATE TABLE quarantine (
 CREATE INDEX idx_quarantine_device ON quarantine (device_id);
 """
 
+# 003 — M2 transcription: one transcript per recording (UNIQUE → idempotent re-run)
+# plus its time-aligned, speaker-labelled segment index (05 §4.3–4.4).
+_MIGRATION_003 = """
+CREATE TABLE transcripts (
+    id           TEXT PRIMARY KEY,                       -- UUID
+    recording_id TEXT NOT NULL UNIQUE REFERENCES recordings(id),  -- one per recording
+    engine       TEXT NOT NULL,                          -- e.g. 'whisperx' / 'null'
+    model        TEXT,                                   -- e.g. 'large-v3'
+    language     TEXT,                                   -- detected or forced
+    json_path    TEXT,                                   -- full word-timestamped JSON
+    text         TEXT,                                   -- plain text (for search)
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE segments (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    transcript_id     TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+    idx               INTEGER NOT NULL,                  -- order within the transcript
+    start_s           REAL NOT NULL,
+    end_s             REAL NOT NULL,
+    speaker_id        INTEGER,                           -- FK→speakers, set in M3
+    diarization_label TEXT,                              -- raw 'SPEAKER_00', set in M3
+    text              TEXT
+);
+CREATE INDEX idx_segments_transcript ON segments (transcript_id, start_s);
+"""
+
 MIGRATIONS: Sequence[tuple[int, str]] = (
     (1, _MIGRATION_001),
     (2, _MIGRATION_002),
+    (3, _MIGRATION_003),
 )
 
 
@@ -92,6 +120,9 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # Wait (don't immediately error) when another connection holds the write lock —
+    # required for the multi-worker job runner's BEGIN IMMEDIATE claims (04 §7).
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 

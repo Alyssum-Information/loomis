@@ -118,6 +118,40 @@ class Job(BaseModel):
         return cls.model_validate(d)
 
 
+class Transcript(BaseModel):
+    """STT output header for a recording (the words/timestamps live in ``json_path``)."""
+
+    id: str
+    recording_id: str
+    engine: str
+    model: str | None = None
+    language: str | None = None
+    json_path: str | None = None
+    text: str | None = None
+    created_at: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        return cls.model_validate(dict(row))
+
+
+class Segment(BaseModel):
+    """One time-aligned span of a transcript; the queryable index over the JSON."""
+
+    id: int | None = None
+    transcript_id: str
+    idx: int
+    start_s: float
+    end_s: float
+    speaker_id: int | None = None  # assigned in M3 (speaker id)
+    diarization_label: str | None = None  # raw label, assigned in M3
+    text: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        return cls.model_validate(dict(row))
+
+
 class Quarantine(BaseModel):
     """A copy that failed SHA-256 verification — kept for inspection, source never deleted."""
 
