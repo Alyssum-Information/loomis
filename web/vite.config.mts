@@ -46,5 +46,13 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    // Proxy API calls to the backend (FastAPI) in dev so the SPA can use
+    // same-origin "/api" paths. See ../docs/11-api-specification.md.
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+      },
+    },
   },
 })

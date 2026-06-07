@@ -9,14 +9,19 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import __version__, db
 from .config import Settings, get_settings
 
 API_PREFIX = "/api/v1"
+
+# app.py -> loomis -> src -> backend -> repo root -> web/dist
+_SPA_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -51,5 +56,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": __version__,
             "db_version": getattr(app.state, "db_version", None),
         }
+
+    # Prod: serve the built SPA from the backend (dev uses the Vite server instead).
+    # html=True makes unknown paths fall back to index.html for client-side routing.
+    if settings.api.serve_spa and _SPA_DIST.is_dir():
+        app.mount("/", StaticFiles(directory=_SPA_DIST, html=True), name="spa")
 
     return app

@@ -18,10 +18,82 @@ services (OneDrive, Google Drive, …) and cloud LLMs are strictly opt-in.
 
 ## Status
 
-🚧 **Pre-alpha — planning stage.** This repository currently contains the
-project design and documentation only; application code has not been written
-yet. See [`docs/`](docs/) for the full plan and the
+🚧 **Pre-alpha — early implementation.** The design is the spec (see
+[`docs/`](docs/)). Built so far: typed config, SQLite + migration runner, the
+FastAPI `health` API, the Vue + Vuetify SPA skeleton, and the **M1 backup core**
+— device registration plus the SHA-256 "safety spine" import (`loomis backup`).
+Transcription, speakers, summaries, and the full UI follow per the
 [roadmap](docs/08-roadmap-and-milestones.md).
+
+## Getting started
+
+### Prerequisites
+
+- **Python 3.12+** and [uv](https://github.com/astral-sh/uv) — backend.
+- **Node 18+** and [pnpm](https://pnpm.io) — frontend.
+- Optional, added in later milestones: **ffmpeg** (transcode), a running
+  **[Ollama](https://ollama.com)** (local LLM), **rclone** (cloud sync). Run
+  `uv run loomis check` to see what's detected.
+
+### Install
+
+```bash
+git clone https://github.com/kevin/loomis
+cd loomis
+
+# Backend (Python)
+cd backend && uv sync          # create venv + install from the lockfile
+
+# Frontend (web)
+cd ../web && pnpm install      # one-time: install SPA deps
+```
+
+### Run
+
+From `backend/`, the one-click launcher starts the API and the Vite dev server
+together, streams both logs, waits for health, and opens a browser:
+
+```bash
+cd backend
+uv run loomis                  # = `loomis up`; Ctrl-C stops both, leaves Ollama etc. running
+uv run loomis up --prod        # build the SPA and serve it from the backend (no Vite)
+```
+
+The app opens at <http://localhost:3000> (dev) or <http://127.0.0.1:8080>
+(`--prod`). Shutdown tears down only Loomis's own processes.
+
+### Back up a recorder (M1)
+
+Import audio from a mounted recorder volume under the integrity safety spine
+(copy → SHA-256 verify → commit → optional source delete). First run registers
+the device by writing `<volume>/.loomis/device.json`:
+
+```bash
+cd backend
+uv run loomis backup E:\               # one-shot import from a volume
+uv run loomis backup --watch           # poll for recorders, import on connect
+uv run loomis backup E:\ --auto-delete # delete each source only after a verified backup
+```
+
+Imported audio lands under `~/.loomis/library/`; the metadata ledger is
+`~/.loomis/loomis.db`. Re-running is idempotent — already-imported files are
+skipped.
+
+### Configure
+
+Loomis reads `<data_dir>/config.toml` (default `~/.loomis/config.toml`), with
+`LOOMIS_<SECTION>__<KEY>` environment overrides. Defaults are **local-first** —
+no network egress until you opt in. Start from
+[`config.example.toml`](config.example.toml); full reference in
+[docs/06-configuration.md](docs/06-configuration.md).
+
+### Develop
+
+```bash
+cd backend
+uv run ruff format . && uv run ruff check . && uv run mypy .
+uv run pytest
+```
 
 ## Features
 

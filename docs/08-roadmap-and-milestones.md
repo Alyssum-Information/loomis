@@ -17,16 +17,17 @@ IDs reference [03 SRS](03-requirements-specification.md). A plan, not a promise.
 ## M0 — Project scaffold ✅ (this stage)
 Design docs, ADRs, and OSS project files. No application code yet.
 
-## M1 — Backup core (the safety spine)
+## M1 — Backup core (the safety spine) ✅
 *Goal: plug in a device and reliably, safely import audio.*
 [features/01](features/01-device-registration-and-backup.md)
-- Device detection + registration — FR-1.1–1.5
-- `device.json` read/write/validate — FR-1.2/1.3
-- Backup ledger, copy, **SHA-256 verify** — FR-2.1–2.4, 2.6, 2.7
-- Optional source deletion gated on verification — FR-2.5
-- SQLite schema + migrations — FR-9.2/9.3 · Config loading — FR-9.1
-- Minimal CLI to run a backup
-> Exit: no data-loss path; re-import idempotent.
+- ✅ Device detection (psutil poll) + registration — FR-1.1–1.5
+- ✅ `device.json` read/write/validate — FR-1.2/1.3
+- ✅ Backup ledger, copy, **SHA-256 verify**, quarantine — FR-2.1–2.4, 2.6, 2.7
+- ✅ Optional source deletion gated on verification — FR-2.5
+- ✅ SQLite schema + migrations — FR-9.2/9.3 · Config loading — FR-9.1
+- ✅ CLI to run a backup (`loomis backup [VOLUME] [--watch] [--auto-delete]`)
+> Exit: no data-loss path; re-import idempotent. **Met.**
+> Native USB events (WMI/pyudev) remain a later optimisation over the poll baseline.
 
 ## M2 — Transcription & transcripts
 *Goal: every imported recording becomes a searchable transcript.*

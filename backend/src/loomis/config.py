@@ -50,6 +50,21 @@ class ApiSettings(BaseModel):
     token: str | None = None  # required when LAN-exposed; from env only
 
 
+# Default match patterns when neither the device nor config narrows them.
+_DEFAULT_AUDIO_GLOBS = ["**/*.wav", "**/*.mp3", "**/*.m4a", "**/*.flac", "**/*.ogg"]
+
+
+class BackupSettings(BaseModel):
+    """Device-watch + safety-spine import policy (see docs/features/01)."""
+
+    poll_interval_s: float = 3.0
+    staging_dir: str = "staging"  # relative to data_dir
+    verify_hash: str = "sha256"  # integrity gate before any source deletion
+    auto_delete_after_backup: bool = False  # global default; device.json may override
+    transcode_policy: str = "keep_original"  # keep_original | transcode_keep | transcode_only
+    audio_globs: list[str] = Field(default_factory=lambda: list(_DEFAULT_AUDIO_GLOBS))
+
+
 class Settings(BaseSettings):
     """Root settings object. Access via :func:`get_settings`."""
 
@@ -61,6 +76,7 @@ class Settings(BaseSettings):
 
     core: CoreSettings = Field(default_factory=CoreSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
+    backup: BackupSettings = Field(default_factory=BackupSettings)
 
     @classmethod
     def settings_customise_sources(
