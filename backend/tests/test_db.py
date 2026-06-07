@@ -18,17 +18,20 @@ def _fresh(tmp_path: Path) -> sqlite3.Connection:
     return conn
 
 
+_LATEST_VERSION = len(db.MIGRATIONS)
+
+
 def test_migration_creates_tables(tmp_path: Path) -> None:
     conn = _fresh(tmp_path)
     names = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"devices", "recordings", "jobs", "schema_migrations"} <= names
+    assert {"devices", "recordings", "jobs", "quarantine", "schema_migrations"} <= names
 
 
 def test_migrations_idempotent(tmp_path: Path) -> None:
     conn = _fresh(tmp_path)
-    assert db.apply_migrations(conn) == 1
+    assert db.apply_migrations(conn) == _LATEST_VERSION
     # re-running applies nothing and keeps version stable
-    assert db.apply_migrations(conn) == 1
+    assert db.apply_migrations(conn) == _LATEST_VERSION
 
 
 def test_device_round_trip(tmp_path: Path) -> None:

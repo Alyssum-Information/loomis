@@ -66,6 +66,7 @@ class Device(BaseModel):
     auto_delete: bool = False
     transcode_policy: TranscodePolicy = TranscodePolicy.KEEP_ORIGINAL
     transcode_opts: dict[str, Any] = Field(default_factory=dict)
+    min_free_bytes: int = 0  # refuse to import if it would leave less free than this
     registered_at: str | None = None
     last_seen_at: str | None = None
 
@@ -115,3 +116,19 @@ class Job(BaseModel):
         d = dict(row)
         d["payload"] = _loads(d.get("payload"), {})
         return cls.model_validate(d)
+
+
+class Quarantine(BaseModel):
+    """A copy that failed SHA-256 verification — kept for inspection, source never deleted."""
+
+    id: str
+    device_id: str | None = None
+    source_path: str
+    quarantine_path: str
+    reason: str = "hash_mismatch"
+    size_bytes: int | None = None
+    detected_at: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        return cls.model_validate(dict(row))

@@ -38,10 +38,11 @@ class Workspace:
     """Resolves and creates the on-disk directories under ``data_dir``."""
 
     data_dir: Path
+    staging_name: str = "staging"  # [backup].staging_dir
 
     @property
     def staging(self) -> Path:
-        return self.data_dir / "staging"
+        return self.data_dir / self.staging_name
 
     @property
     def quarantine(self) -> Path:
@@ -54,6 +55,20 @@ class Workspace:
     def ensure(self) -> None:
         for d in (self.staging, self.quarantine, self.library):
             d.mkdir(parents=True, exist_ok=True)
+
+    def clear_staging(self) -> int:
+        """Discard leftover in-flight copies (orphans from a crashed run); returns the count.
+
+        ``staging/`` only ever holds pre-verification copies, so anything found at the
+        start of a run is debris and safe to delete (Feature 01 §6).
+        """
+        removed = 0
+        if self.staging.exists():
+            for path in self.staging.iterdir():
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+                    removed += 1
+        return removed
 
     def library_path(
         self, device_slug: str, recorded_at: datetime, recording_id: str, ext: str

@@ -4,14 +4,15 @@ Local-first defaults: nothing here causes network egress. Values come from
 built-in defaults, then an optional TOML file, then environment variables
 (``LOOMIS_<SECTION>__<KEY>``) — see ../../docs/06-configuration.md.
 
-Only the sections needed by the current walking skeleton (``core``, ``api``) are
-modelled; more are added as features land.
+Only the sections implemented so far (``core``, ``api``, ``backup``) are modelled;
+more are added as features land.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import (
@@ -20,6 +21,8 @@ from pydantic_settings import (
     SettingsConfigDict,
     TomlConfigSettingsSource,
 )
+
+from .models import TranscodePolicy
 
 
 def _config_path() -> Path:
@@ -59,9 +62,10 @@ class BackupSettings(BaseModel):
 
     poll_interval_s: float = 3.0
     staging_dir: str = "staging"  # relative to data_dir
-    verify_hash: str = "sha256"  # integrity gate before any source deletion
+    verify_hash: Literal["sha256"] = "sha256"  # integrity gate; only sha256 is supported
     auto_delete_after_backup: bool = False  # global default; device.json may override
-    transcode_policy: str = "keep_original"  # keep_original | transcode_keep | transcode_only
+    # validated against the enum; a device.json may still override per device:
+    transcode_policy: TranscodePolicy = TranscodePolicy.KEEP_ORIGINAL
     audio_globs: list[str] = Field(default_factory=lambda: list(_DEFAULT_AUDIO_GLOBS))
 
 

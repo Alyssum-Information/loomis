@@ -30,6 +30,11 @@ streams both logs into one terminal, waits for health, opens a browser, and on
 Ctrl-C shuts down only its own children — never external services like Ollama.
 The frontend needs deps first: `cd ../web && pnpm install`.
 
+> **M1 note:** `loomis backup` runs as its own process and writes the database
+> directly. Until the background daemon arrives, don't run a backup and the API
+> server against the same `data_dir` at the same time (single-writer assumption).
+> Device auto-import is via `loomis backup --watch`; `serve`/`up` do not yet watch.
+
 Layout follows [docs/04 §12](../docs/04-system-architecture.md#12-repository-layout):
 the package lives in `src/loomis/`. Config reference:
 [docs/06](../docs/06-configuration.md). API contract:

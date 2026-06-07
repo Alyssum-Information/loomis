@@ -62,7 +62,27 @@ CREATE TABLE jobs (
 CREATE INDEX idx_jobs_status_type ON jobs (status, type);
 """
 
-MIGRATIONS: Sequence[tuple[int, str]] = ((1, _MIGRATION_001),)
+# 002 — M1 hardening: a local free-space guard per device, and a durable record of
+# copies that failed verification (so quarantine events are queryable, not just logged).
+_MIGRATION_002 = """
+ALTER TABLE devices ADD COLUMN min_free_bytes INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE quarantine (
+    id              TEXT PRIMARY KEY,                    -- UUID
+    device_id       TEXT REFERENCES devices(id),
+    source_path     TEXT NOT NULL,                       -- file on the device
+    quarantine_path TEXT NOT NULL,                       -- where the bad copy was parked
+    reason          TEXT NOT NULL,                       -- e.g. 'hash_mismatch'
+    size_bytes      INTEGER,
+    detected_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_quarantine_device ON quarantine (device_id);
+"""
+
+MIGRATIONS: Sequence[tuple[int, str]] = (
+    (1, _MIGRATION_001),
+    (2, _MIGRATION_002),
+)
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

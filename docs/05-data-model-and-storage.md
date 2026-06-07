@@ -95,6 +95,7 @@ diary_meeting_links (diary_entries ─ meetings)
 | auto_delete | INTEGER (bool) | source-cleanup policy |
 | transcode_policy | TEXT | keep_original / transcode_keep / transcode_only |
 | transcode_opts | TEXT (JSON) | codec/bitrate/application |
+| min_free_bytes | INTEGER | free-space guard; refuse imports that would cross it |
 | registered_at | TEXT (ISO8601) | |
 | last_seen_at | TEXT (ISO8601) | updated each connect |
 
@@ -207,11 +208,17 @@ Similarity: cosine over `embedding`. Start with in-process numpy; adopt
 ### 4.14 `cloud_sync_log`
 `(id, remote, scope, started_at, finished_at, result, stats_json)`.
 
-### 4.15 `schema_migrations`
+### 4.15 `quarantine`
+`(id, device_id, source_path, quarantine_path, reason, size_bytes, detected_at)` —
+a durable record of copies that failed SHA-256 verification (FR-2.7), so the event
+is queryable and surfaceable in the UI rather than living only in the logs. The
+source file is never deleted.
+
+### 4.16 `schema_migrations`
 `(version INTEGER, applied_at TEXT)` — drives automatic, versioned migrations
 ([FR-9.3](03-requirements-specification.md#fr-9-configuration--data-management)).
 
-### 4.16 `ui_intents` (internal command queue)
+### 4.17 `ui_intents` (internal command queue)
 An internal queue of user-triggered commands (`register_device`,
 `rename_speaker`, `merge_speakers`, `sync_now`, `resummarize_day`). The **API
 server** writes these when handling command endpoints
@@ -231,7 +238,10 @@ detail behind the API.
 
 ## 6. Retention & integrity
 
-- `staging/` and `quarantine/` are never auto-purged without a verified library
-  copy existing first.
+- `staging/` holds only **pre-verification** copies; anything left there is debris
+  from an interrupted run and is swept at the start of the next backup (the source
+  on the device is still the authority, so nothing is lost).
+- `quarantine/` copies are **never** auto-purged — they pair with a `quarantine`
+  row (§4.15) and await user review; the source is never deleted.
 - DB in WAL mode; periodic checkpoint; export/backup per
   [FR-9.4](03-requirements-specification.md#fr-9-configuration--data-management).

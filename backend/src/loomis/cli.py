@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+import sys
+from contextlib import suppress
 from pathlib import Path
 
 from . import __version__
@@ -47,26 +49,39 @@ def _backup_one(
     name: str | None,
     auto_delete: bool | None,
 ) -> None:
+    import logging
+
     from . import backup
 
     if not volume.exists():
         print(f"volume not found: {volume}")
         return
-    device = backup.register_or_load_device(
-        conn, volume, settings, name=name, auto_delete=auto_delete
-    )
-    report = backup.run_backup(conn, device, volume, settings)
+    # One bad device (e.g. a malformed device.json) must not abort the whole run —
+    # critical in --watch mode. Log and skip; never overwrite the user's file.
+    try:
+        device = backup.register_or_load_device(
+            conn, volume, settings, name=name, auto_delete=auto_delete
+        )
+        report = backup.run_backup(conn, device, volume, settings)
+    except Exception:
+        logging.getLogger(__name__).exception("backup failed for %s", volume)
+        print(f"  ! backup failed for {volume}; skipped - see the log above.")
+        return
     print(
         f"[{device.name}] imported={report.imported} skipped={report.skipped} "
         f"duplicates={report.duplicates} quarantined={report.quarantined} "
         f"deleted={report.deleted} errors={report.errors}"
     )
+    if report.quarantined or report.errors:
+        print("  ! some files were quarantined or failed - see the log above for details.")
 
 
 def _backup(args: argparse.Namespace) -> int:
+    from .logging_setup import configure_logging
     from .watcher import DeviceWatcher
 
     settings = get_settings()
+    configure_logging(settings.core.log_level)
     auto_delete: bool | None = True if args.auto_delete else None
     conn = _open_db(settings)
     try:
@@ -127,6 +142,11 @@ def _add_up_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Never let a non-ASCII path or message hard-crash on a legacy console codepage
+    # (e.g. Windows cp950); degrade unencodable chars instead of raising.
+    with suppress(AttributeError, ValueError):
+        sys.stdout.reconfigure(errors="replace")  # type: ignore[union-attr]
+
     parser = argparse.ArgumentParser(prog="loomis", description="Loomis backend CLI")
     # No subcommand → `up`, the one-click dev launcher.
     _add_up_flags(parser)

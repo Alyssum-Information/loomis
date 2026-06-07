@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, db
 from .config import Settings, get_settings
+from .logging_setup import configure_logging
 
 API_PREFIX = "/api/v1"
 
@@ -26,6 +27,8 @@ _SPA_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+
+    configure_logging(settings.core.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
