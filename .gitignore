@@ -1,0 +1,39 @@
+# Root .gitignore — global / cross-cutting only.
+# Language tooling lives in each subproject:
+#   backend/.gitignore  (Python: .venv, caches, build, …)
+#   web/.gitignore      (Node: node_modules, dist, caches, …)
+
+# ── IDE ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+
+# ── OS ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Global env / secrets ────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Loomis runtime data — privacy guard ─────────────────────────────────
+# Default data_dir is ~/.loomis (outside the repo). These guard the repo root
+# in case data_dir is pointed here, so recordings/DB/transcripts are never
+# committed. config.example.toml IS tracked; a real config.toml is not.
+/data/
+/library/
+/transcripts/
+/diary/
+/meetings/
+/staging/
+/quarantine/
+/logs/
+loomis.db
+loomis.db-wal
+loomis.db-shm
+config.toml
+*.opus
+*.wav
+*.mp3
+*.m4a
