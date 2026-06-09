@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from typing import TypedDict
 
 from .models import (
     Device,
@@ -27,6 +28,19 @@ from .models import (
     Transcript,
 )
 from .speakerid import Vector, blob_to_vec, centroid, vec_to_blob
+
+
+class SearchRow(TypedDict):
+    ref_kind: str
+    ref_id: str
+    title: str
+    snippet: str
+
+
+class TimelineRow(TypedDict):
+    date: str
+    has_diary: bool
+    meeting_count: int
 
 
 def find_device(conn: sqlite3.Connection, device_id: str) -> Device | None:
@@ -329,6 +343,49 @@ def replace_transcript(
             for s in segments
         ],
     )
+    index_document(conn, "recording", transcript.recording_id, "", transcript.text or "")
+
+
+# --- full-text search index (FR-7.5); maintained here, not via DB triggers ---
+
+
+def index_document(
+    conn: sqlite3.Connection, ref_kind: str, ref_id: str, title: str, body: str
+) -> None:
+    """Upsert one searchable document (delete any prior row for this ref, then insert)."""
+    conn.execute("DELETE FROM search_fts WHERE ref_kind = ? AND ref_id = ?", (ref_kind, ref_id))
+    conn.execute(
+        "INSERT INTO search_fts (ref_kind, ref_id, title, body) VALUES (?, ?, ?, ?)",
+        (ref_kind, ref_id, title or "", body or ""),
+    )
+
+
+def unindex_document(conn: sqlite3.Connection, ref_kind: str, ref_id: str) -> None:
+    conn.execute("DELETE FROM search_fts WHERE ref_kind = ? AND ref_id = ?", (ref_kind, ref_id))
+
+
+def search_documents(conn: sqlite3.Connection, query: str, *, limit: int) -> list[SearchRow]:
+    """Full-text search across transcripts/diaries/meetings, best match first (FR-7.5).
+
+    The query is wrapped as an FTS5 phrase so arbitrary user input can't trip the
+    FTS query grammar.
+    """
+    phrase = '"' + query.replace('"', '""') + '"'
+    rows = conn.execute(
+        "SELECT ref_kind, ref_id, title, "
+        "snippet(search_fts, -1, '[', ']', '…', 12) AS snippet "
+        "FROM search_fts WHERE search_fts MATCH ? ORDER BY rank LIMIT ?",
+        (phrase, limit),
+    ).fetchall()
+    return [
+        SearchRow(
+            ref_kind=str(r["ref_kind"]),
+            ref_id=str(r["ref_id"]),
+            title=str(r["title"]),
+            snippet=str(r["snippet"]),
+        )
+        for r in rows
+    ]
 
 
 # --- segments (diarization + speaker id) ---
@@ -455,6 +512,13 @@ def replace_diary_entry(
         "INSERT INTO diary_recordings (diary_entry_id, recording_id) VALUES (?, ?)",
         [(entry.id, rid) for rid in recording_ids],
     )
+    index_document(
+        conn,
+        "diary",
+        entry.date,
+        entry.title or "",
+        str(entry.metadata.get("narrative_markdown", "")),
+    )
 
 
 def link_diary_meetings(
@@ -475,6 +539,14 @@ def meetings_for_date(conn: sqlite3.Connection, date: str) -> list[Meeting]:
 
 def delete_meetings_for_recording(conn: sqlite3.Connection, recording_id: str) -> None:
     """Drop any meeting built from this recording so meeting_extract is idempotent."""
+    ids = [
+        str(r["meeting_id"])
+        for r in conn.execute(
+            "SELECT meeting_id FROM meeting_recordings WHERE recording_id = ?", (recording_id,)
+        ).fetchall()
+    ]
+    for mid in ids:
+        unindex_document(conn, "meeting", mid)
     conn.execute(
         "DELETE FROM meetings WHERE id IN "
         "(SELECT meeting_id FROM meeting_recordings WHERE recording_id = ?)",
@@ -511,3 +583,113 @@ def insert_meeting(
         "INSERT OR IGNORE INTO meeting_participants (meeting_id, speaker_id) VALUES (?, ?)",
         [(meeting.id, sid) for sid in participant_ids],
     )
+    index_document(
+        conn,
+        "meeting",
+        meeting.id,
+        meeting.title or "",
+        str(meeting.metadata.get("summary_markdown", "")),
+    )
+
+
+# --- API read queries (M3 REST surface) ---
+
+
+def list_devices(conn: sqlite3.Connection) -> list[Device]:
+    rows = conn.execute("SELECT * FROM devices ORDER BY registered_at").fetchall()
+    return [Device.from_row(r) for r in rows]
+
+
+def list_recordings(
+    conn: sqlite3.Connection,
+    *,
+    device_id: str | None = None,
+    status: str | None = None,
+    date: str | None = None,
+    limit: int,
+    offset: int,
+) -> tuple[list[Recording], bool]:
+    """Filtered, newest-first recordings page. Returns ``(items, has_more)``."""
+    clauses: list[str] = []
+    params: list[object] = []
+    if device_id:
+        clauses.append("device_id = ?")
+        params.append(device_id)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    if date:
+        clauses.append(f"{_LOCAL_DATE} = ?")
+        params.append(date)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM recordings{where} "  # noqa: S608 (clauses use ? placeholders only)
+        "ORDER BY COALESCE(recorded_at, imported_at) DESC, id DESC LIMIT ? OFFSET ?",
+        (*params, limit + 1, offset),
+    ).fetchall()
+    has_more = len(rows) > limit
+    return [Recording.from_row(r) for r in rows[:limit]], has_more
+
+
+def get_transcript(conn: sqlite3.Connection, recording_id: str) -> Transcript | None:
+    row = conn.execute(
+        "SELECT * FROM transcripts WHERE recording_id = ?", (recording_id,)
+    ).fetchone()
+    return Transcript.from_row(row) if row is not None else None
+
+
+def list_speakers(conn: sqlite3.Connection) -> list[Speaker]:
+    rows = conn.execute("SELECT * FROM speakers ORDER BY id").fetchall()
+    return [Speaker.from_row(r) for r in rows]
+
+
+def get_diary_entry(conn: sqlite3.Connection, date: str) -> DiaryEntry | None:
+    row = conn.execute("SELECT * FROM diary_entries WHERE date = ?", (date,)).fetchone()
+    return DiaryEntry.from_row(row) if row is not None else None
+
+
+def get_meeting(conn: sqlite3.Connection, meeting_id: str) -> Meeting | None:
+    row = conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+    return Meeting.from_row(row) if row is not None else None
+
+
+def list_jobs(conn: sqlite3.Connection, *, status: str | None = None, limit: int) -> list[Job]:
+    if status:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE status = ? ORDER BY id DESC LIMIT ?", (status, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [Job.from_row(r) for r in rows]
+
+
+def timeline(
+    conn: sqlite3.Connection, *, date_from: str | None = None, date_to: str | None = None
+) -> list[TimelineRow]:
+    """Days that have a diary entry and/or meetings, with per-day meeting counts (FR-7.2)."""
+    clauses: list[str] = []
+    params: list[object] = []
+    if date_from:
+        clauses.append("d >= ?")
+        params.append(date_from)
+    if date_to:
+        clauses.append("d <= ?")
+        params.append(date_to)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        "SELECT d AS date, MAX(has_diary) AS has_diary, SUM(meeting_count) AS meeting_count "  # noqa: S608
+        "FROM ("
+        "  SELECT date AS d, 1 AS has_diary, 0 AS meeting_count FROM diary_entries"
+        "  UNION ALL"
+        "  SELECT occurred_on AS d, 0, 1 FROM meetings WHERE occurred_on IS NOT NULL"
+        f") {where} GROUP BY d ORDER BY d DESC",
+        params,
+    ).fetchall()
+    return [
+        TimelineRow(
+            date=str(r["date"]),
+            has_diary=bool(r["has_diary"]),
+            meeting_count=int(r["meeting_count"]),
+        )
+        for r in rows
+    ]
