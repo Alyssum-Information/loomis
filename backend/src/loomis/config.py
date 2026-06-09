@@ -51,6 +51,9 @@ class ApiSettings(BaseModel):
     serve_spa: bool = True
     open_browser: bool = True
     token: str | None = None  # required when LAN-exposed; from env only
+    # Run the background daemon (job runner + device watcher) inside the API process.
+    # On by default for `serve`/`up`; tests disable it to stay deterministic/offline.
+    run_daemon: bool = True
 
 
 # Default match patterns when neither the device nor config narrows them.

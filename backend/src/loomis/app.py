@@ -17,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, db
 from .config import Settings, get_settings
+from .daemon import Daemon
+from .events import EventBus
 from .logging_setup import configure_logging
 
 API_PREFIX = "/api/v1"
@@ -37,9 +39,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         conn = db.connect(data_dir / "loomis.db")
         app.state.db_version = db.apply_migrations(conn)
         app.state.db = conn
+
+        # Event bus is always present (WS subscribes to it); the daemon that feeds
+        # it is opt-out via [api].run_daemon (off in tests).
+        app.state.bus = EventBus()
+        daemon = Daemon(settings, app.state.bus) if settings.api.run_daemon else None
+        if daemon is not None:
+            daemon.start()
+        app.state.daemon = daemon
         try:
             yield
         finally:
+            if daemon is not None:
+                daemon.stop()
             conn.close()
 
     app = FastAPI(title="Loomis", version=__version__, lifespan=lifespan)

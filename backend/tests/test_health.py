@@ -11,7 +11,8 @@ from loomis.config import ApiSettings, CoreSettings, Settings
 
 
 def _settings(tmp_path: Path) -> Settings:
-    return Settings(core=CoreSettings(data_dir=tmp_path), api=ApiSettings())
+    # Daemon off: tests must not poll real volumes or spawn background threads.
+    return Settings(core=CoreSettings(data_dir=tmp_path), api=ApiSettings(run_daemon=False))
 
 
 def test_health_ok(tmp_path: Path) -> None:
