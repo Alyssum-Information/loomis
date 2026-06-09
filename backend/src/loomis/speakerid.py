@@ -23,10 +23,14 @@ from typing import Protocol
 
 from .config import SpeakerIdSettings
 from .diarize import DiarTurn
+from .errors import PermanentJobError
 
 Vector = tuple[float, ...]
 
 _NULL_DIM = 32
+_EMBED_HINT = (
+    "speaker embedding deps are not installed — run ./install.sh (or `uv sync --extra diarize`)"
+)
 
 
 # --- serialization + vector math (stdlib only) ---
@@ -110,7 +114,7 @@ class PyannoteEmbedder:
         if self._device != "auto":
             return self._device
         try:
-            import torch  # type: ignore[import-not-found]  # noqa: PLC0415
+            import torch  # noqa: PLC0415
 
             return "cuda" if torch.cuda.is_available() else "cpu"
         except Exception:
@@ -118,20 +122,25 @@ class PyannoteEmbedder:
 
     def _load(self) -> object:
         if self._inference is None:
-            import torch  # noqa: PLC0415
-            from pyannote.audio import (  # type: ignore[import-not-found]  # noqa: PLC0415
-                Inference,
-                Model,
-            )
+            try:
+                import torch  # noqa: PLC0415
+                from pyannote.audio import (  # noqa: PLC0415
+                    Inference,
+                    Model,
+                )
+            except ImportError as exc:
+                raise PermanentJobError(_EMBED_HINT) from exc
 
             model = Model.from_pretrained(self.model)
+            if model is None:
+                raise PermanentJobError(f"could not load embedding model {self.model!r}")
             self._inference = Inference(
                 model, window="whole", device=torch.device(self._resolve_device())
             )
         return self._inference
 
     def embed(self, audio: Path, turns: list[DiarTurn]) -> dict[str, Vector]:
-        from pyannote.core import Segment  # type: ignore[import-not-found]  # noqa: PLC0415
+        from pyannote.core import Segment  # noqa: PLC0415
 
         inference = self._load()
         # Aggregate per label: average the embeddings of that speaker's turns.
@@ -152,7 +161,7 @@ def get_embedder(settings: SpeakerIdSettings) -> SpeakerEmbedder:
         return NullEmbedder()
     if settings.engine == "pyannote":
         return PyannoteEmbedder(settings)
-    raise ValueError(f"unknown speaker_id engine: {settings.engine!r}")
+    raise PermanentJobError(f"unknown speaker_id engine: {settings.engine!r}")
 
 
 # --- matching (FR-5.3, FR-5.4) ---

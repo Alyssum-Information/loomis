@@ -77,6 +77,29 @@ def test_register_missing_volume_404(ctx: tuple[TestClient, Settings], tmp_path:
     assert resp.status_code == 404
 
 
+def test_register_then_unregister(
+    ctx: tuple[TestClient, Settings], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from loomis import backup
+
+    client, _ = ctx
+    volume = tmp_path / "REC"
+    volume.mkdir()
+    device_id = client.post("/api/v1/devices/register", json={"volume": str(volume)}).json()["id"]
+    assert client.get(f"/api/v1/devices/{device_id}").json()["registered"] is True
+
+    # Make the marker-removal scan find the temp volume (not real removable media).
+    monkeypatch.setattr(backup, "removable_volumes", lambda: {volume})
+    assert client.delete(f"/api/v1/devices/{device_id}").status_code == 204
+    assert not (volume / ".loomis" / "device.json").exists()
+    assert client.get(f"/api/v1/devices/{device_id}").json()["registered"] is False
+
+
+def test_unregister_unknown_404(ctx: tuple[TestClient, Settings]) -> None:
+    client, _ = ctx
+    assert client.delete("/api/v1/devices/nope").status_code == 404
+
+
 def test_patch_speaker_rename(ctx: tuple[TestClient, Settings]) -> None:
     client, settings = ctx
     conn = _conn(settings)
@@ -216,3 +239,21 @@ def test_retry_job(ctx: tuple[TestClient, Settings]) -> None:
 def test_retry_unknown_job_404(ctx: tuple[TestClient, Settings]) -> None:
     client, _ = ctx
     assert client.post("/api/v1/jobs/9999/retry").status_code == 404
+
+
+def test_retry_all_jobs(ctx: tuple[TestClient, Settings]) -> None:
+    client, settings = ctx
+    conn = _conn(settings)
+    for _ in range(3):
+        jid = repository.enqueue_job(conn, JobType.STT, {"recording_id": "x"})
+        conn.execute("UPDATE jobs SET status = 'parked' WHERE id = ?", (jid,))
+    conn.close()
+
+    resp = client.post("/api/v1/jobs/retry-all")
+    assert resp.status_code == 202
+    assert resp.json()["requeued"] == 3
+
+    conn = _conn(settings)
+    queued = conn.execute("SELECT COUNT(*) AS n FROM jobs WHERE status = 'queued'").fetchone()["n"]
+    conn.close()
+    assert queued == 3

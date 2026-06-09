@@ -7,7 +7,7 @@
 | **Version** | 0.1 (Draft) |
 | **Last updated** | 2026-06-06 |
 | **Related** | [02 Flows §1–2](../02-user-flows.md), [05 Data Model](../05-data-model-and-storage.md), [02 Audio Compression](02-audio-compression.md), [ADR-0009](../adr/0009-device-registration-format.md), [ADR-0011](../adr/0011-usb-device-detection.md) |
-| **Traces** | FR-1.1 … FR-1.8, FR-2.1 … FR-2.8 |
+| **Traces** | FR-1.1 … FR-1.10, FR-2.1 … FR-2.8 |
 
 ---
 
@@ -29,13 +29,21 @@ A `DeviceWatcher` interface with platform adapters
 - **Native events (optional):** Windows WMI / `WM_DEVICECHANGE`; Linux pyudev —
   for instant, low-overhead notification.
 
-## 3. Registration (FR-1.2 … FR-1.6)
+## 3. Registration (FR-1.2 … FR-1.6, FR-1.9)
+
+Registration is **explicit and opt-in**. Connecting a volume never registers or
+imports it on its own — the user decides which volumes are recorders.
 
 1. On connect, look for `<volume>/.loomis/device.json`.
-2. **Known device** → resolve the `devices` row by `device_id`; go to §4.
-3. **Unknown device** → raise a UI prompt; user supplies name, owner/speaker
-   hint, auto-delete, transcode policy, audio globs.
-4. Write `device.json` to the volume **and** insert the `devices` row.
+2. **Registered device** (file present → a `devices` row resolved by `device_id`,
+   or a serial/label match for a read-only volume) → go to §4 (auto-backup).
+3. **Unregistered volume** → emit a `device.connected` event flagged
+   `registered: false`; the UI raises a prompt (it also appears in the Devices
+   screen's *pending* list). **No import happens.** Nothing is written to the
+   volume and no `devices` row is created.
+4. **Register** (user action — the Devices screen, or the `loomis backup` CLI which
+   targets a volume explicitly): write `device.json` to the volume **and** insert
+   (or re-activate) the `devices` row with `registered = 1`.
 5. **Fallbacks:** hand-authored `device.json` is validated and accepted (FR-1.6);
    read-only volume → DB-only registration, identity falls back to volume serial
    / label (FR-1.5).
@@ -45,9 +53,18 @@ A `DeviceWatcher` interface with platform adapters
 [05 §4.1](../05-data-model-and-storage.md#41-devices). Multiple devices are
 supported (FR-1.8); settings are editable later via the UI (FR-1.7).
 
+### 3.1 Unregister (FR-1.10)
+
+The user can unregister a device from the Devices screen. This removes its
+`device.json` (when the volume is connected) and deactivates the `devices` row
+(`registered = 0`) so auto-backup stops. **Imported recordings are retained** —
+the `devices` row is kept (recordings reference it), just marked inactive; a later
+re-registration reactivates it.
+
 ## 4. Backup & ingest (FR-2.1 … FR-2.8)
 
-The ordered, integrity-preserving import:
+Runs **only for registered devices** (FR-1.9). The ordered, integrity-preserving
+import:
 
 | # | Step | Guarantee |
 |---|------|-----------|

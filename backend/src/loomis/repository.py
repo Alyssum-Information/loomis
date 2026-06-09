@@ -64,8 +64,8 @@ def insert_device(conn: sqlite3.Connection, device: Device) -> None:
         """
         INSERT INTO devices
             (id, name, volume_serial, owner_speaker_id, audio_globs, auto_delete,
-             transcode_policy, transcode_opts, min_free_bytes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             transcode_policy, transcode_opts, min_free_bytes, registered)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             device.id,
@@ -77,8 +77,14 @@ def insert_device(conn: sqlite3.Connection, device: Device) -> None:
             device.transcode_policy.value,
             json.dumps(device.transcode_opts),
             device.min_free_bytes,
+            int(device.registered),
         ),
     )
+
+
+def set_device_registered(conn: sqlite3.Connection, device_id: str, registered: bool) -> None:
+    """Activate/deactivate a device's registration (FR-1.9/1.10)."""
+    conn.execute("UPDATE devices SET registered = ? WHERE id = ?", (int(registered), device_id))
 
 
 def touch_device(conn: sqlite3.Connection, device_id: str) -> None:
@@ -750,6 +756,15 @@ def requeue_job(conn: sqlite3.Connection, job_id: int) -> bool:
         (job_id,),
     )
     return cur.rowcount > 0
+
+
+def requeue_failed_jobs(conn: sqlite3.Connection) -> int:
+    """Requeue every failed/parked job (FR-7.6). Returns how many were requeued."""
+    cur = conn.execute(
+        "UPDATE jobs SET status = 'queued', attempts = 0, last_error = NULL, worker_id = NULL, "
+        "updated_at = datetime('now') WHERE status IN ('failed', 'parked')"
+    )
+    return int(cur.rowcount)
 
 
 def list_jobs(conn: sqlite3.Connection, *, status: str | None = None, limit: int) -> list[Job]:

@@ -76,6 +76,7 @@ class Device(BaseModel):
     transcode_policy: TranscodePolicy = TranscodePolicy.KEEP_ORIGINAL
     transcode_opts: dict[str, Any] = Field(default_factory=dict)
     min_free_bytes: int = 0  # refuse to import if it would leave less free than this
+    registered: bool = True  # only registered devices auto-import (FR-1.9)
     registered_at: str | None = None
     last_seen_at: str | None = None
 
@@ -85,6 +86,7 @@ class Device(BaseModel):
         d["audio_globs"] = _loads(d.get("audio_globs"), [])
         d["transcode_opts"] = _loads(d.get("transcode_opts"), {})
         d["auto_delete"] = bool(d.get("auto_delete", 0))
+        d["registered"] = bool(d.get("registered", 1))
         return cls.model_validate(d)
 
 

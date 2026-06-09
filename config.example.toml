@@ -38,28 +38,38 @@ device       = "auto"        # auto | cuda | cpu
 compute_type = "auto"
 language     = "auto"        # or force, e.g. "zh"
 
-[diarization]
-provider     = "pyannote"
-min_speakers = 1
-max_speakers = 0             # 0 = auto
+[diarize]
+engine       = "pyannote"       # pyannote (default) | null
+model        = "pyannote/speaker-diarization-3.1"
+device       = "auto"           # auto | cuda | cpu
+min_speakers = 0                # 0 / unset = auto
+max_speakers = 0
+# pyannote's model is GATED. Create a free HuggingFace token, accept the terms at
+# https://huggingface.co/pyannote/speaker-diarization-3.1, then set it here (or via
+# LOOMIS_DIARIZE__HF_TOKEN). Without it the diarize step parks.
+hf_token     = ""
 
 [speaker_id]
-match_threshold    = 0.65
+engine             = "pyannote" # pyannote (default) | null
+match_threshold    = 0.70
 margin             = 0.10
-new_identity_below = 0.45
+new_identity_below = 0.55
 vector_backend     = "memory"   # memory | sqlite-vec
 
 [llm]
-provider    = "ollama"          # ollama (default) | openai | anthropic | gemini
-model       = "llama3.1:8b"
-ollama_host = "http://127.0.0.1:11434"
-# For cloud providers, set the key in the environment, NOT here:
-#   LOOMIS_LLM__API_KEY=...
-summary_language = "auto"
+provider = "ollama"             # ollama (default) | null  (cloud providers: future, opt-in)
+model    = "qwen2.5:7b"         # pulled by the install script; `ollama pull <model>` for others
+host     = "http://127.0.0.1:11434"
+timeout_s   = 120.0
+max_retries = 2
+# Cloud API keys (future) come from the environment, NOT here:  LOOMIS_LLM__API_KEY=...
 
 [summaries]
-diary_day_settle_minutes = 30
-ambiguous_bias           = "diary"
+diary_day_settle_minutes  = 30
+ambiguous_bias            = "diary"
+solo_dominance            = 0.85
+classify_confidence_floor = 0.6
+summary_language          = "auto"
 
 [cloud]
 enabled       = false           # opt-in; nothing leaves the machine until true

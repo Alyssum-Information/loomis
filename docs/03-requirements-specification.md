@@ -25,12 +25,14 @@ it. Priority uses [MoSCoW](https://en.wikipedia.org/wiki/MoSCoW_method): **M**us
 |----|-------------|----------|
 | FR-1.1 | Detect connection and removal of USB removable storage volumes. | M |
 | FR-1.2 | On connect, look for a registration file (`.loomis/device.json`) on the volume. | M |
-| FR-1.3 | Register a new device: persist a `devices` record and write `device.json` to the volume. | M |
+| FR-1.3 | Register a new device **(explicit, user-initiated)**: persist a `devices` record and write `device.json` to the volume. | M |
 | FR-1.4 | Capture per-device settings at registration: name, owner/speaker hint, auto-delete, transcode preference, audio path globs. | M |
 | FR-1.5 | Recognize a previously registered device on reconnect via `device.json` (fallback: volume serial / label). | M |
 | FR-1.6 | Validate and accept a hand-authored `device.json`. | S |
 | FR-1.7 | Allow editing device settings later via the UI. | S |
 | FR-1.8 | Support multiple registered devices. | S |
+| FR-1.9 | Auto-backup and the processing pipeline run **only for registered devices**; an unregistered connected volume raises a prompt but is never imported automatically. | M |
+| FR-1.10 | Unregister a device: remove its `device.json` (when reachable) and deactivate it so auto-backup stops. Imported recordings are retained. | S |
 
 ### FR-2 Backup & ingest
 *Spec: [features/01](features/01-device-registration-and-backup.md)*

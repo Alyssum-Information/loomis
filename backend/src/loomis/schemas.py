@@ -80,3 +80,9 @@ class JobAccepted(BaseModel):
     """202 response for commands that enqueue background work (11 §1)."""
 
     job_id: int
+
+
+class RetryResult(BaseModel):
+    """How many failed/parked jobs were requeued by a bulk retry."""
+
+    requeued: int

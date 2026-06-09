@@ -75,13 +75,25 @@ class Daemon:
             conn.close()
 
     def _on_connect(self, conn: sqlite3.Connection, volume: Path) -> None:
-        """Import a connected recorder and announce the activity over the bus.
+        """Import a connected recorder **only if it is registered** (FR-1.9).
 
-        One bad volume (e.g. a malformed device.json) must not kill the watcher
-        thread, so failures are logged and swallowed — same contract as the CLI.
+        Unregistered volumes just raise a prompt over the bus — nothing is written
+        to them and no row is created. One bad volume (e.g. a malformed device.json)
+        must not kill the watcher thread, so failures are logged and swallowed.
         """
         try:
-            device = backup.register_or_load_device(conn, volume, self.settings)
+            device = backup.resolve_device(conn, volume)
+            if device is None or not device.registered:
+                # Opt-in: prompt the user; never auto-register or import (FR-1.9).
+                self.bus.publish(
+                    "device.connected",
+                    {
+                        "device_id": device.id if device else None,
+                        "volume": str(volume),
+                        "registered": False,
+                    },
+                )
+                return
             report = backup.run_backup(conn, device, volume, self.settings)
         except Exception:
             log.exception("daemon import failed for %s; skipped", volume)

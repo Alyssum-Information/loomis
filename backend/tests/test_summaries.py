@@ -167,5 +167,7 @@ def test_meeting_extract_rerun_is_idempotent(tmp_path: Path) -> None:
 def test_get_provider_unknown_raises() -> None:
     import pytest
 
-    with pytest.raises(ValueError, match="unknown llm provider"):
+    from loomis.errors import PermanentJobError
+
+    with pytest.raises(PermanentJobError, match="unknown llm provider"):
         get_provider(LlmSettings(provider="bogus"))

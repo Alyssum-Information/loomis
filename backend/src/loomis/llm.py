@@ -18,6 +18,7 @@ from typing import Protocol
 from pydantic import BaseModel, ValidationError
 
 from .config import LlmSettings
+from .errors import PermanentJobError
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,12 @@ class OllamaProvider:
         self._timeout = settings.timeout_s
 
     def complete(self, prompt: str, *, json_mode: bool) -> str:
-        import httpx  # noqa: PLC0415
+        try:
+            import httpx  # noqa: PLC0415
+        except ImportError as exc:
+            raise PermanentJobError(
+                "httpx is not installed — run ./install.sh (or `uv sync --extra llm`)"
+            ) from exc
 
         payload: dict[str, object] = {"model": self.model, "prompt": prompt, "stream": False}
         if json_mode:
@@ -66,7 +72,7 @@ def get_provider(settings: LlmSettings) -> LLMProvider:
         return NullProvider()
     if settings.provider == "ollama":
         return OllamaProvider(settings)
-    raise ValueError(f"unknown llm provider: {settings.provider!r}")
+    raise PermanentJobError(f"unknown llm provider: {settings.provider!r}")
 
 
 def model_id(provider: LLMProvider) -> str:

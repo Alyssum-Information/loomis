@@ -31,6 +31,7 @@ export interface Device {
   owner_speaker_id?: number | null
   auto_delete: boolean
   transcode_policy: string
+  registered: boolean
   registered_at?: string | null
   last_seen_at?: string | null
 }
@@ -180,6 +181,13 @@ async function sendJson<T> (method: string, path: string, body?: unknown): Promi
   return await res.json() as T
 }
 
+async function sendNoContent (method: string, path: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { method })
+  if (!res.ok) {
+    await parseError(res)
+  }
+}
+
 // --- endpoints ---
 
 export const getHealth = (): Promise<Health> => getJson<Health>('/health')
@@ -244,6 +252,10 @@ export function updateDevice (
   return sendJson<Device>('PATCH', `/devices/${id}`, body)
 }
 
+export function unregisterDevice (id: string): Promise<void> {
+  return sendNoContent('DELETE', `/devices/${id}`)
+}
+
 export function updateSpeaker (
   id: number,
   body: { display_name?: string, is_provisional?: boolean },
@@ -261,4 +273,8 @@ export function splitSpeaker (id: number, recordingId: string): Promise<JobAccep
 
 export function retryJob (id: number): Promise<JobAccepted> {
   return sendJson<JobAccepted>('POST', `/jobs/${id}/retry`)
+}
+
+export function retryAllJobs (): Promise<{ requeued: number }> {
+  return sendJson<{ requeued: number }>('POST', '/jobs/retry-all')
 }

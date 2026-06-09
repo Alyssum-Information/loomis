@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from . import db, repository
 from .config import Settings
+from .errors import PermanentJobError
 from .events import EventBus
 from .models import JobStatus, JobType, RecordingStatus
 from .pipeline import HANDLERS, Handler, JobContext
@@ -65,9 +66,14 @@ class JobRunner:
             self._emit(job_id, job.type, JobStatus.DONE.value, job.attempts)
         except Exception as exc:  # noqa: BLE001 (a handler failure must not kill the worker)
             log.exception("job %s (%s) failed", job_id, job.type)
-            status = repository.fail_job(
-                conn, job_id, repr(exc), max_attempts=self.settings.jobs.max_attempts
-            )
+            # A missing optional dependency or bad config can't be fixed by retrying —
+            # park it now (max_attempts=0) with a clear message instead of burning retries.
+            if isinstance(exc, PermanentJobError | ImportError):
+                status = repository.fail_job(conn, job_id, str(exc), max_attempts=0)
+            else:
+                status = repository.fail_job(
+                    conn, job_id, repr(exc), max_attempts=self.settings.jobs.max_attempts
+                )
             # Dead-lettered: surface it on the recording so it isn't stuck "processing".
             if status == JobStatus.PARKED:
                 rec_id = job.payload.get("recording_id")

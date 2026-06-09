@@ -27,6 +27,7 @@ from .devicefile import DeviceBackup, DeviceFile, DeviceTranscode, device_file_p
 from .models import Device, JobType, Quarantine, Recording, RecordingStatus, TranscodePolicy
 from .sqlite_tx import transaction
 from .storage import Workspace, sha256_file, slugify
+from .watcher import removable_volumes
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +127,56 @@ def _register(conn: sqlite3.Connection, device: Device) -> Device:
     repository.insert_device(conn, device)
     repository.touch_device(conn, device.id)
     return device
+
+
+def resolve_device(conn: sqlite3.Connection, volume: Path) -> Device | None:
+    """Load-only resolution for a connected volume — never creates a row (FR-1.9).
+
+    Returns the matching ``devices`` row (by ``device.json`` id, else volume-serial
+    fallback) or None if the volume has never been registered. The caller checks
+    ``device.registered`` before importing.
+    """
+    path = device_file_path(volume)
+    if path.exists():
+        df = DeviceFile.load(path)
+        return repository.find_device(conn, df.device_id)
+    return repository.find_device_by_serial(conn, _volume_identity(volume))
+
+
+def register_device(
+    conn: sqlite3.Connection,
+    volume: Path,
+    settings: Settings,
+    *,
+    name: str | None = None,
+    auto_delete: bool | None = None,
+) -> Device:
+    """Explicitly register (or re-activate) a volume (FR-1.3): writes device.json + row."""
+    device = register_or_load_device(conn, volume, settings, name=name, auto_delete=auto_delete)
+    repository.set_device_registered(conn, device.id, True)
+    device.registered = True
+    return device
+
+
+def unregister_device(conn: sqlite3.Connection, device_id: str) -> bool:
+    """Deactivate a device (FR-1.10): mark unregistered + best-effort remove device.json.
+
+    Keeps the row and its recordings. Returns False if the device id is unknown.
+    """
+    if repository.find_device(conn, device_id) is None:
+        return False
+    repository.set_device_registered(conn, device_id, False)
+    # Remove the on-device marker if the volume is currently connected.
+    for vol in removable_volumes():
+        path = device_file_path(vol)
+        if path.exists():
+            try:
+                if DeviceFile.load(path).device_id == device_id:
+                    path.unlink()
+                    break
+            except OSError:
+                continue
+    return True
 
 
 def _volume_identity(volume: Path) -> str:

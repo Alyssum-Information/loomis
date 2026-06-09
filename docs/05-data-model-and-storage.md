@@ -96,6 +96,7 @@ diary_meeting_links (diary_entries ─ meetings)
 | transcode_policy | TEXT | keep_original / transcode_keep / transcode_only |
 | transcode_opts | TEXT (JSON) | codec/bitrate/application |
 | min_free_bytes | INTEGER | free-space guard; refuse imports that would cross it |
+| registered | INTEGER (bool) | active registration; **only registered devices auto-import** (FR-1.9). Unregister sets 0, keeping the row + recordings |
 | registered_at | TEXT (ISO8601) | |
 | last_seen_at | TEXT (ISO8601) | updated each connect |
 

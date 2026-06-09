@@ -8,11 +8,26 @@ deterministic empty transcript for offline/dev runs and CI.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .config import SttSettings
+from .errors import PermanentJobError
+
+_STT_HINT = "whisperx is not installed — run ./install.sh (or `uv sync --extra stt`)"
+_FFMPEG_HINT = "ffmpeg not found on PATH — install ffmpeg (whisperx needs it to read audio)"
+
+
+def _import_whisperx() -> Any:
+    try:
+        import whisperx  # noqa: PLC0415
+    except ImportError as exc:
+        raise PermanentJobError(_STT_HINT) from exc
+    if shutil.which("ffmpeg") is None:
+        raise PermanentJobError(_FFMPEG_HINT)
+    return whisperx
 
 
 @dataclass(slots=True)
@@ -88,7 +103,7 @@ class WhisperXEngine:
         compute = self._compute_type
         if device == "auto" or compute == "auto":
             try:
-                import torch  # type: ignore[import-not-found]  # noqa: PLC0415
+                import torch  # noqa: PLC0415
 
                 has_cuda = bool(torch.cuda.is_available())
             except Exception:
@@ -101,15 +116,13 @@ class WhisperXEngine:
 
     def _load(self) -> object:
         if self._model is None:
-            import whisperx  # type: ignore[import-not-found]  # noqa: PLC0415
-
+            whisperx = _import_whisperx()
             device, compute = self._resolve_device()
             self._model = whisperx.load_model(self.model, device, compute_type=compute)
         return self._model
 
     def transcribe(self, audio: Path, *, language: str | None) -> STTResult:
-        import whisperx  # noqa: PLC0415
-
+        whisperx = _import_whisperx()
         model = self._load()
         device, _ = self._resolve_device()
         loaded = whisperx.load_audio(str(audio))
@@ -149,4 +162,4 @@ def get_engine(settings: SttSettings) -> STTEngine:
         return NullSTTEngine()
     if settings.engine == "whisperx":
         return WhisperXEngine(settings)
-    raise ValueError(f"unknown stt engine: {settings.engine!r}")
+    raise PermanentJobError(f"unknown stt engine: {settings.engine!r}")

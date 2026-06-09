@@ -34,6 +34,7 @@
         <thead>
           <tr>
             <th>Name</th>
+            <th>State</th>
             <th>Auto-delete</th>
             <th>Transcode</th>
             <th>Last seen</th>
@@ -45,6 +46,12 @@
           <tr v-for="d in devices" :key="d.id">
             <td style="min-width: 200px">
               <v-text-field v-model="edits[d.id].name" density="compact" hide-details variant="plain" />
+            </td>
+
+            <td>
+              <v-chip :color="d.registered ? 'success' : 'grey'" label size="x-small">
+                {{ d.registered ? 'registered' : 'inactive' }}
+              </v-chip>
             </td>
 
             <td>
@@ -65,11 +72,21 @@
 
             <td class="text-right">
               <v-btn size="small" variant="text" @click="save(d.id)">Save</v-btn>
+
+              <v-btn
+                v-if="d.registered"
+                color="error"
+                size="small"
+                variant="text"
+                @click="unregister(d.id)"
+              >
+                Unregister
+              </v-btn>
             </td>
           </tr>
 
           <tr v-if="devices.length === 0">
-            <td class="text-medium-emphasis" colspan="5">No devices registered.</td>
+            <td class="text-medium-emphasis" colspan="6">No devices.</td>
           </tr>
         </tbody>
       </v-table>
@@ -85,6 +102,7 @@
     listDevices,
     type PendingDevice,
     registerDevice,
+    unregisterDevice,
     updateDevice,
   } from '@/services/api'
   import { useEventsStore } from '@/stores/events'
@@ -132,6 +150,10 @@
 
   function doRegister (volume: string): void {
     void act(() => registerDevice({ volume, name: registerNames.value[volume] || undefined }))
+  }
+
+  function unregister (id: string): void {
+    void act(() => unregisterDevice(id))
   }
 
   onMounted(() => {

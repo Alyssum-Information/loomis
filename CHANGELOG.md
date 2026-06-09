@@ -7,6 +7,34 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`install.sh` / `install.ps1`** at the repo root: one command installs **all
+  baseline requirements** for the full pipeline — uv, Node + pnpm, ffmpeg, Ollama
+  (+ the default model), and the backend STT/diarize/LLM extras + web deps — so
+  `uv run loomis up` works without manual setup. ffmpeg and the WhisperX/pyannote/
+  Ollama backends are baseline, not optional; only *alternative* backends are.
+  (`--skip-llm-model` / `-SkipLlmModel` skips the large Ollama pull. Diarization
+  still needs a one-time HuggingFace token for pyannote's gated model — see README.)
+- **Bulk job retry**: `POST /api/v1/jobs/retry-all` requeues every failed/parked job;
+  the Jobs screen gains a **Retry all** button.
+- `loomis check` now reports whether the optional `whisperx` / `pyannote` Python
+  modules are importable.
+
+### Changed
+- **Permanent failures park immediately**: a missing optional dependency (e.g.
+  `whisperx`) or a bad engine/provider name now parks the job on the first attempt
+  with an actionable message (run `./install.sh`) instead of burning the full retry
+  budget. Engine/provider construction raises a typed `PermanentJobError`.
+- **Opt-in device registration** (FR-1.3, 1.9, 1.10): the daemon no longer
+  auto-registers or imports every connected volume. It imports **only registered
+  devices**; an unregistered volume raises a prompt (`device.connected` with
+  `registered:false`) and nothing is written to it. Registration is an explicit
+  user action — `POST /devices/register` (Devices screen) writes `device.json` and
+  activates the row. New `DELETE /devices/{id}` unregisters a device (removes
+  `device.json` when reachable, deactivates the row; recordings are retained).
+  Schema migration 007 adds `devices.registered`. The standalone `loomis backup`
+  CLI still registers the volume you explicitly target.
+
+### Added
 - **M3 daemon foundation**: `loomis serve` / `loomis up` now run the durable job
   runner and the device watcher as background threads inside the API process, so a
   single process is the only SQLite writer. An in-process event bus carries
