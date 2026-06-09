@@ -64,9 +64,9 @@ language = "auto"               # auto-detect; or force e.g. "zh"
 # whisperx needs ffmpeg on PATH to read audio. ffmpeg + whisperx are installed by
 # the repo-root install script (./install.ps1 / ./install.sh) — they are baseline,
 # not optional. Use engine = "null" only to run the pipeline without transcription.
-# device = "auto" uses an NVIDIA GPU when present. The default install ships CPU
-# PyTorch (slow); install CUDA torch with the installer's -Gpu / --gpu flag. On
-# CPU-only machines, use model = "small" or "medium" for a usable speed.
+# device = "auto" uses an NVIDIA GPU when present. The default install ships CUDA
+# PyTorch (the installer's `gpu` extra); pass -Cpu / --cpu for the CPU-only build.
+# On CPU-only machines, use model = "small" or "medium" for a usable speed.
 
 [jobs]                          # durable pipeline job runner (04 §7)
 concurrency = 1                 # GPU-heavy steps serialize by default

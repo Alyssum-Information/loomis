@@ -5,15 +5,17 @@
 #   STT (whisperx) / diarization (pyannote) / LLM extras, plus the web deps.
 # Only *alternatives* (a different STT/LLM backend) are optional and not installed here.
 #
-#   ./install.ps1                 # install + set up everything (CPU torch)
-#   ./install.ps1 -Gpu            # also install CUDA torch (NVIDIA GPU; much faster STT)
+# PyTorch defaults to the **GPU (CUDA)** build (the `gpu` extra → cu128 wheels).
+# Use -Cpu on a machine without an NVIDIA GPU to get the smaller CPU-only wheels.
+#
+#   ./install.ps1                 # install + set up everything (GPU torch by default)
+#   ./install.ps1 -Cpu            # CPU-only torch build (smaller download, no CUDA)
 #   ./install.ps1 -SkipLlmModel   # skip the (large) Ollama model pull
-param([switch]$SkipLlmModel, [switch]$Gpu)
+param([switch]$SkipLlmModel, [switch]$Cpu)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $LLM_MODEL = 'qwen2.5:7b'   # keep in sync with [llm].model default
-$CUDA = 'cu124'            # CUDA wheel index for torch (cu121/cu124); match your driver
 
 function Have($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
@@ -46,13 +48,16 @@ if (Have pnpm) { Write-Host '    [ok]   pnpm' } else { Write-Warning '    pnpm m
 
 if (-not (Have uv)) { Write-Error 'uv is required and not on PATH. Open a new shell so PATH updates, then re-run.'; exit 1 }
 
-Write-Host '==> Backend (uv sync + STT/diarize/LLM extras)'
-Set-Location "$root\backend"
-uv sync --extra stt --extra diarize --extra llm
+# GPU by default: the `gpu` extra pins torch to the PyTorch CUDA (cu128) index in the
+# lockfile, so `uv sync --extra gpu` installs the CUDA build and every later `uv run`
+# keeps it. --cpu picks the smaller CPU wheels instead (mutually exclusive extras).
+$torchExtra = if ($Cpu) { 'cpu' } else { 'gpu' }
 
-if ($Gpu) {
-  Write-Host "==> CUDA torch ($CUDA) — GPU acceleration"
-  uv pip install torch torchaudio --index-url "https://download.pytorch.org/whl/$CUDA" --upgrade
+Write-Host "==> Backend (uv sync + STT/diarize/LLM extras; $torchExtra torch)"
+Set-Location "$root\backend"
+uv sync --extra stt --extra diarize --extra llm --extra $torchExtra
+
+if (-not $Cpu) {
   $cuda_ok = uv run python -c "import torch; print(torch.cuda.is_available())"
   Write-Host "    torch.cuda.is_available() = $cuda_ok"
 }
@@ -63,7 +68,7 @@ if (Have pnpm) {
   pnpm install
 }
 
-if (Have ollama -and -not $SkipLlmModel) {
+if ((Have ollama) -and -not $SkipLlmModel) {
   Write-Host "==> LLM model (ollama pull $LLM_MODEL — this is large)"
   try { ollama pull $LLM_MODEL } catch { Write-Warning "    pull failed (is Ollama running?). Run later: ollama pull $LLM_MODEL" }
 }

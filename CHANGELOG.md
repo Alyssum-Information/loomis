@@ -20,6 +20,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   modules are importable.
 
 ### Changed
+- **GPU PyTorch by default**: the installer now installs the **CUDA** torch build.
+  New mutually-exclusive `gpu` / `cpu` extras pin torch/torchaudio to the PyTorch
+  CUDA (cu128) or CPU wheel index in the universal lockfile (`[tool.uv.sources]` +
+  `[tool.uv].conflicts`), so `uv sync --extra gpu` records the CUDA build once and
+  later `uv run` keeps it — no `UV_TORCH_BACKEND` env var or post-sync overlay.
+  `install.ps1` / `install.sh` select `gpu` by default, `-Cpu` / `--cpu` for the
+  smaller CPU-only wheels. whisperx stays at its current version (torch 2.8 cu128
+  wheels satisfy it).
 - **Permanent failures park immediately**: a missing optional dependency (e.g.
   `whisperx`) or a bad engine/provider name now parks the job on the first attempt
   with an actionable message (run `./install.sh`) instead of burning the full retry

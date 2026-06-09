@@ -16,7 +16,7 @@ from typing import Any, Protocol
 from .config import SttSettings
 from .errors import PermanentJobError
 
-_STT_HINT = "whisperx is not installed — run ./install.sh (or `uv sync --extra stt`)"
+_STT_HINT = "whisperx is not installed — run ./install.sh (or `uv sync --extra stt --extra gpu`)"
 _FFMPEG_HINT = "ffmpeg not found on PATH — install ffmpeg (whisperx needs it to read audio)"
 
 

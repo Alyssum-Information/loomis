@@ -20,7 +20,7 @@ from .errors import PermanentJobError
 
 _DIARIZE_HINT = (
     "diarization deps are not installed — run ./install.sh "
-    "(or `uv sync --extra stt --extra diarize`)"
+    "(or `uv sync --extra stt --extra diarize --extra gpu`)"
 )
 _FFMPEG_HINT = "ffmpeg not found on PATH — install ffmpeg (whisperx needs it to read audio)"
 

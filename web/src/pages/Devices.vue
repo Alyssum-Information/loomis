@@ -1,8 +1,49 @@
 <template>
   <v-container class="py-6">
-    <h2 class="text-h5 mb-4">Devices</h2>
+    <div class="d-flex align-center mb-4">
+      <h2 class="text-h5">Devices</h2>
+      <v-spacer />
+
+      <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openAdd">
+        Add device
+      </v-btn>
+    </div>
 
     <v-alert v-if="error" class="mb-4" type="error" variant="tonal">{{ error }}</v-alert>
+
+    <v-dialog v-model="addOpen" max-width="520">
+      <v-card>
+        <v-card-title>Register a device</v-card-title>
+
+        <v-card-text>
+          <p class="text-medium-emphasis mb-4">
+            Point Loomis at the recorder's mounted drive or folder. A
+            <code>.loomis/device.json</code> marker is written there and the device
+            starts auto-importing.
+          </p>
+
+          <v-text-field
+            v-model="addVolume"
+            class="mb-2"
+            density="comfortable"
+            hint="e.g. E:\\ on Windows, or /Volumes/RECORDER"
+            label="Drive or folder path"
+            persistent-hint
+          />
+
+          <v-text-field v-model="addName" density="comfortable" label="Name (optional)" />
+        </v-card-text>
+
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="addOpen = false">Cancel</v-btn>
+
+          <v-btn color="primary" :disabled="!addVolume.trim()" variant="flat" @click="addDevice">
+            Register
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <v-alert
       v-for="p in pending"
@@ -116,6 +157,10 @@
   const error = ref<string | null>(null)
   const events = useEventsStore()
 
+  const addOpen = ref(false)
+  const addVolume = ref('')
+  const addName = ref('')
+
   const policies = ['keep_original', 'transcode_keep', 'transcode_only']
 
   async function refresh (): Promise<void> {
@@ -150,6 +195,19 @@
 
   function doRegister (volume: string): void {
     void act(() => registerDevice({ volume, name: registerNames.value[volume] || undefined }))
+  }
+
+  function openAdd (): void {
+    addVolume.value = ''
+    addName.value = ''
+    addOpen.value = true
+  }
+
+  function addDevice (): void {
+    const volume = addVolume.value.trim()
+    if (!volume) return
+    addOpen.value = false
+    void act(() => registerDevice({ volume, name: addName.value.trim() || undefined }))
   }
 
   function unregister (id: string): void {

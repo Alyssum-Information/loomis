@@ -46,14 +46,16 @@ It installs the full baseline — [uv](https://github.com/astral-sh/uv), Node + 
 backend STT / diarization / LLM extras, and the web dependencies. Add
 `-SkipLlmModel` / `--skip-llm-model` to skip the large model download.
 
-> **GPU (NVIDIA):** the default install uses **CPU** PyTorch — transcription will be
-> slow. With an NVIDIA GPU, add `-Gpu` / `--gpu` to install CUDA PyTorch (much
-> faster). STT/diarize default to `device = "auto"`, so they use the GPU as soon as
-> it's available. On CPU-only machines, set `[stt].model = "small"` (or `medium`) in
-> your config for a usable speed.
+> **GPU (NVIDIA):** the installer defaults to the **CUDA** build of PyTorch — the
+> `gpu` extra pins torch to the CUDA (cu128) wheels in the lockfile, so the build is
+> recorded once and every later `uv run` keeps it (no env var, no new shell needed).
+> STT/diarize use `device = "auto"`, so they pick up the GPU automatically. On a
+> machine without an NVIDIA GPU, install with `-Cpu` / `--cpu` for the smaller
+> CPU-only wheels, and set `[stt].model = "small"` (or `medium`) for usable speed.
 
 > Installing by hand instead: `cd backend && uv sync --extra stt --extra diarize
-> --extra llm`, then `cd ../web && pnpm install`, with ffmpeg + Ollama on your PATH.
+> --extra llm --extra gpu` (use `--extra cpu` for the CPU-only build), then
+> `cd ../web && pnpm install`, with ffmpeg + Ollama on your PATH.
 
 ### 2. Diarization model (one-time)
 

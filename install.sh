@@ -6,20 +6,22 @@
 #   STT (whisperx) / diarization (pyannote) / LLM extras, plus the web deps.
 # Only *alternatives* (a different STT/LLM backend) are optional and not installed here.
 #
-#   ./install.sh                 # install + set up everything (CPU torch)
-#   ./install.sh --gpu           # also install CUDA torch (NVIDIA GPU; much faster STT)
+# PyTorch defaults to the **GPU (CUDA)** build (the `gpu` extra → cu128 wheels).
+# Use --cpu on a machine without an NVIDIA GPU to get the smaller CPU-only wheels.
+#
+#   ./install.sh                 # install + set up everything (GPU torch by default)
+#   ./install.sh --cpu           # CPU-only torch build (smaller download, no CUDA)
 #   ./install.sh --skip-llm-model  # skip the (large) Ollama model pull
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLM_MODEL="qwen2.5:7b"   # keep in sync with [llm].model default
-CUDA="cu124"             # CUDA wheel index for torch (cu121/cu124); match your driver
 SKIP_LLM_MODEL=0
-GPU=0
+CPU=0
 for arg in "$@"; do
   case "$arg" in
     --skip-llm-model) SKIP_LLM_MODEL=1 ;;
-    --gpu) GPU=1 ;;
+    --cpu) CPU=1 ;;
   esac
 done
 
@@ -65,13 +67,16 @@ if ! have pnpm; then
 fi
 have pnpm && echo "    [ok]   pnpm" || echo "    [warn] pnpm missing — install Node first"
 
-echo "==> Backend (uv sync + STT/diarize/LLM extras)"
-cd "$ROOT/backend"
-uv sync --extra stt --extra diarize --extra llm
+# GPU by default: the `gpu` extra pins torch to the PyTorch CUDA (cu128) index in the
+# lockfile, so `uv sync --extra gpu` installs the CUDA build and every later `uv run`
+# keeps it. --cpu picks the smaller CPU wheels instead (mutually exclusive extras).
+if [[ "$CPU" == "1" ]]; then TORCH_EXTRA=cpu; else TORCH_EXTRA=gpu; fi
 
-if [[ "$GPU" == "1" ]]; then
-  echo "==> CUDA torch ($CUDA) — GPU acceleration"
-  uv pip install torch torchaudio --index-url "https://download.pytorch.org/whl/$CUDA" --upgrade
+echo "==> Backend (uv sync + STT/diarize/LLM extras; $TORCH_EXTRA torch)"
+cd "$ROOT/backend"
+uv sync --extra stt --extra diarize --extra llm --extra "$TORCH_EXTRA"
+
+if [[ "$CPU" == "0" ]]; then
   echo "    torch.cuda.is_available() = $(uv run python -c 'import torch; print(torch.cuda.is_available())')"
 fi
 
