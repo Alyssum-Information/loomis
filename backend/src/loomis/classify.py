@@ -8,6 +8,8 @@ the lifelog.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from .config import SummariesSettings
 from .models import ClassifyResult, Segment
 
@@ -29,9 +31,11 @@ def classify_segments(segments: list[Segment], cfg: SummariesSettings) -> Classi
 
     distinct = len(durations)
     if distinct == 0:
-        # Nothing to go on — fall back to the configured tie-break bias.
-        bias = cfg.ambiguous_bias if cfg.ambiguous_bias in ("diary", "meeting") else "diary"
-        return ClassifyResult(type=bias, confidence=0.0, reason="no speaker segments")  # type: ignore[arg-type]
+        # Nothing to go on — fall back to the configured tie-break bias (defaults to diary).
+        bias: Literal["diary", "meeting"] = (
+            "meeting" if cfg.ambiguous_bias == "meeting" else "diary"
+        )
+        return ClassifyResult(type=bias, confidence=0.0, reason="no speaker segments")
 
     if distinct == 1:
         return ClassifyResult(type="diary", confidence=0.9, reason="single speaker")

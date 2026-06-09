@@ -80,7 +80,10 @@ def complete_structured[T: BaseModel](
     """Prompt for JSON and validate into ``schema``, retrying on mismatch (feature 05 §5)."""
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
-        raw = provider.complete(prompt, json_mode=True)
+        # Reinforce the JSON-only instruction on retries; a bare re-ask of a
+        # deterministic model would just reproduce the same invalid output.
+        ask = prompt if attempt == 0 else f"{prompt}\n\nReturn ONLY a JSON object, no prose."
+        raw = provider.complete(ask, json_mode=True)
         try:
             return schema.model_validate_json(raw)
         except ValidationError as exc:

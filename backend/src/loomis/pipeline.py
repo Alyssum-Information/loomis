@@ -21,7 +21,7 @@ from . import repository
 from .classify import classify_segments
 from .config import Settings
 from .diarize import DiarTurn, get_diarize_engine
-from .llm import complete_structured, get_provider, model_id
+from .llm import LLMProvider, complete_structured, get_provider, model_id
 from .models import (
     ClassifyResult,
     DiaryDoc,
@@ -40,6 +40,7 @@ from .speakerid import get_embedder, match
 from .sqlite_tx import transaction
 from .stt import get_engine
 from .summarize import (
+    PROMPT_VERSION,
     build_classify_prompt,
     build_diary_prompt,
     build_meeting_prompt,
@@ -288,6 +289,18 @@ def handle_classify(ctx: JobContext, job: Job) -> None:
                 repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
 
 
+def _summary_metadata(doc: DiaryDoc | MeetingDoc, provider: LLMProvider) -> dict[str, object]:
+    """Summary content plus provenance (which model + prompt produced it) for reproducibility.
+
+    Stored both in the DB ``metadata`` column and the on-disk JSON sidecar (FR-6.7).
+    """
+    return {
+        **doc.model_dump(),
+        "model": model_id(provider),
+        "prompt_version": PROMPT_VERSION,
+    }
+
+
 def _write_sidecar(md_path: Path, markdown: str, payload: dict[str, object]) -> None:
     """Write a Markdown file plus its ``.json`` metadata sidecar (05 §1)."""
     md_path.parent.mkdir(parents=True, exist_ok=True)
@@ -320,14 +333,15 @@ def handle_meeting_extract(ctx: JobContext, job: Job) -> None:
     participant_ids = sorted({s.speaker_id for s in segments if s.speaker_id is not None})
     meeting_id = uuid4().hex
     md_path = ctx.data_dir / "meetings" / f"{meeting_id}.md"
-    _write_sidecar(md_path, render_meeting_markdown(doc), doc.model_dump())
+    metadata = _summary_metadata(doc, provider)
+    _write_sidecar(md_path, render_meeting_markdown(doc), metadata)
 
     meeting = Meeting(
         id=meeting_id,
         title=doc.title or None,
         occurred_on=date,
         markdown_path=str(md_path),
-        metadata=doc.model_dump(),
+        metadata=metadata,
         model=model_id(provider),
     )
     with transaction(conn):
@@ -371,7 +385,8 @@ def handle_diary_aggregate(ctx: JobContext, job: Job) -> None:
 
     meeting_links = [(m.title or "Meeting", f"../meetings/{m.id}.md") for m in meetings]
     md_path = ctx.data_dir / "diary" / f"{date}.md"
-    _write_sidecar(md_path, render_diary_markdown(date, doc, meeting_links), doc.model_dump())
+    metadata = _summary_metadata(doc, provider)
+    _write_sidecar(md_path, render_diary_markdown(date, doc, meeting_links), metadata)
 
     entry_id = uuid4().hex
     entry = DiaryEntry(
@@ -379,7 +394,7 @@ def handle_diary_aggregate(ctx: JobContext, job: Job) -> None:
         date=date,
         title=doc.title or None,
         markdown_path=str(md_path),
-        metadata=doc.model_dump(),
+        metadata=metadata,
         model=model_id(provider),
     )
     with transaction(conn):
