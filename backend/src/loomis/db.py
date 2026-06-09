@@ -106,10 +106,36 @@ CREATE TABLE segments (
 CREATE INDEX idx_segments_transcript ON segments (transcript_id, start_s);
 """
 
+# 004 — M2 speakers: cross-recording identities + their voiceprint embeddings
+# (04 feature §4–5, 05 §4.5–4.6). `segments.speaker_id` / `diarization_label`
+# (mig 003) and `devices.owner_speaker_id` (mig 001) are wired up here.
+_MIGRATION_004 = """
+CREATE TABLE speakers (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name   TEXT,                                -- NULL until the user names it
+    is_provisional INTEGER NOT NULL DEFAULT 1,          -- auto-created, unconfirmed
+    needs_review   INTEGER NOT NULL DEFAULT 0,          -- uncertain match, flag for UI
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE voiceprints (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    speaker_id          INTEGER NOT NULL REFERENCES speakers(id) ON DELETE CASCADE,
+    embedding           BLOB NOT NULL,                  -- float32[dim], L2-normalized
+    dim                 INTEGER NOT NULL,
+    source_recording_id TEXT REFERENCES recordings(id),
+    source_label        TEXT,                           -- diarization label it came from
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_voiceprints_speaker ON voiceprints (speaker_id);
+"""
+
 MIGRATIONS: Sequence[tuple[int, str]] = (
     (1, _MIGRATION_001),
     (2, _MIGRATION_002),
     (3, _MIGRATION_003),
+    (4, _MIGRATION_004),
 )
 
 

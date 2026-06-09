@@ -20,8 +20,10 @@ from .models import (
     Recording,
     RecordingStatus,
     Segment,
+    Speaker,
     Transcript,
 )
+from .speakerid import Vector, blob_to_vec, centroid, vec_to_blob
 
 
 def find_device(conn: sqlite3.Connection, device_id: str) -> Device | None:
@@ -295,3 +297,92 @@ def replace_transcript(
             for s in segments
         ],
     )
+
+
+# --- segments (diarization + speaker id) ---
+
+
+def get_segments_for_recording(conn: sqlite3.Connection, recording_id: str) -> list[Segment]:
+    """All segments of a recording's transcript, in order (for diarize / speaker_id)."""
+    rows = conn.execute(
+        "SELECT s.* FROM segments s "
+        "JOIN transcripts t ON s.transcript_id = t.id "
+        "WHERE t.recording_id = ? ORDER BY s.idx",
+        (recording_id,),
+    ).fetchall()
+    return [Segment.from_row(r) for r in rows]
+
+
+def set_segment_diar_label(conn: sqlite3.Connection, segment_id: int, label: str | None) -> None:
+    conn.execute("UPDATE segments SET diarization_label = ? WHERE id = ?", (label, segment_id))
+
+
+def set_segment_speaker(conn: sqlite3.Connection, segment_id: int, speaker_id: int) -> None:
+    conn.execute("UPDATE segments SET speaker_id = ? WHERE id = ?", (speaker_id, segment_id))
+
+
+# --- speakers + voiceprints (cross-recording identity, FR-5.2–5.4) ---
+
+
+def create_speaker(conn: sqlite3.Connection, *, needs_review: bool = False) -> int:
+    """Create a provisional, unnamed identity; returns its id."""
+    cur = conn.execute(
+        "INSERT INTO speakers (is_provisional, needs_review) VALUES (1, ?)",
+        (int(needs_review),),
+    )
+    return int(cur.lastrowid or 0)
+
+
+def find_speaker(conn: sqlite3.Connection, speaker_id: int) -> Speaker | None:
+    row = conn.execute("SELECT * FROM speakers WHERE id = ?", (speaker_id,)).fetchone()
+    return Speaker.from_row(row) if row is not None else None
+
+
+def flag_speaker_review(conn: sqlite3.Connection, speaker_id: int, needs_review: bool) -> None:
+    conn.execute(
+        "UPDATE speakers SET needs_review = ?, updated_at = datetime('now') WHERE id = ?",
+        (int(needs_review), speaker_id),
+    )
+
+
+def add_voiceprint(
+    conn: sqlite3.Connection,
+    speaker_id: int,
+    embedding: Vector,
+    *,
+    source_recording_id: str | None = None,
+    source_label: str | None = None,
+) -> None:
+    """Append an embedding to a speaker's identity (the accuracy flywheel, FR-5.2)."""
+    conn.execute(
+        """
+        INSERT INTO voiceprints
+            (speaker_id, embedding, dim, source_recording_id, source_label)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (speaker_id, vec_to_blob(embedding), len(embedding), source_recording_id, source_label),
+    )
+
+
+def delete_voiceprints_for_recording(conn: sqlite3.Connection, recording_id: str) -> None:
+    """Drop this recording's contributions so a re-run of speaker_id is idempotent."""
+    conn.execute("DELETE FROM voiceprints WHERE source_recording_id = ?", (recording_id,))
+
+
+def delete_empty_provisional_speakers(conn: sqlite3.Connection) -> None:
+    """Remove auto-created identities left with no voiceprints (e.g. after a re-run)."""
+    conn.execute(
+        "DELETE FROM speakers WHERE is_provisional = 1 "
+        "AND id NOT IN (SELECT DISTINCT speaker_id FROM voiceprints)"
+    )
+
+
+def speaker_centroids(conn: sqlite3.Connection) -> list[tuple[int, Vector]]:
+    """One L2-normalized centroid per speaker — the in-memory match index (§5, §8)."""
+    rows = conn.execute(
+        "SELECT speaker_id, embedding FROM voiceprints ORDER BY speaker_id"
+    ).fetchall()
+    by_speaker: dict[int, list[Vector]] = {}
+    for r in rows:
+        by_speaker.setdefault(int(r["speaker_id"]), []).append(blob_to_vec(r["embedding"]))
+    return [(sid, centroid(vecs)) for sid, vecs in by_speaker.items()]

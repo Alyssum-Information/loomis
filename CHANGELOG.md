@@ -37,6 +37,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   optional Opus transcode with decode/duration validation gating source deletion.
   CLI: `loomis worker [--once] [--types ...]`.
 
+- **M2 speakers — diarization + identification** (FR-5.1–5.4): the pipeline extends
+  `stt → diarize → speaker_id`. Swappable, lazy-loaded `pyannote` diarize + embedding
+  engines (dep-free `null` engines for offline/CI); a voiceprint DB (`speakers`,
+  `voiceprints`) with in-memory cosine matching that assigns to an existing identity,
+  creates a new provisional one, or flags uncertain matches for review; per-segment
+  speaker labels; idempotent `speaker_id` re-runs.
+
 ### Notes
 - M1 import runs as a CLI process. Until the background daemon lands, avoid
   running `loomis backup` and the API server against the same database
@@ -44,4 +51,4 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The pipeline runs via `loomis worker`; WhisperX is an opt-in extra
   (`uv sync --extra stt`) and needs ffmpeg on PATH for transcode.
 
-_See the [roadmap](docs/08-roadmap-and-milestones.md) for what's next (M2: local intelligence — speakers + summaries)._
+_See the [roadmap](docs/08-roadmap-and-milestones.md) for what's next (M2: summaries — diary + meetings)._
