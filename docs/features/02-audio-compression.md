@@ -56,11 +56,11 @@ A failed transcode never triggers source deletion.
 `transcode` is the first job step
 ([04 §6](../04-system-architecture.md#6-processing-pipeline)).
 
-**M2 behaviour:** the `transcode` step is enqueued **only** for the
+**M1 behaviour:** the `transcode` step is enqueued **only** for the
 `transcode_keep` / `transcode_only` policies; under `keep_original` STT reads the
 original directly (no transcode). Producing a normalized/loudness-corrected copy
 to feed STT even under `keep_original` is an optimisation deferred to a later
-milestone (see §6) so the M2 path stays simple and avoids redundant work.
+milestone (see §6) so the M1 path stays simple and avoids redundant work.
 
 ## 6. Open questions
 
