@@ -6,6 +6,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-09
+
+First tagged pre-alpha: the ingest spine (M1) plus local intelligence (M2) —
+diarization, cross-recording speaker identity, and diary/meeting summaries.
+
 ### Added
 - Project design and documentation: vision, user flows, requirements,
   architecture, data model, configuration, API specification, the six feature
