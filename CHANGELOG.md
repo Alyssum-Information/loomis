@@ -23,6 +23,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SPA — `job.updated`, `device.connected`, `recording.added`, and `diary.updated`
   (emitted by the diary aggregation step) — so the UI reflects backend state without
   polling.
+- **M3 command endpoints** (FR-1.7, 5.5, 6.8, 7.6, 11 §3): writes that mutate the
+  library — `POST /devices/register`, `PATCH /devices/{id}`, `PATCH /speakers/{id}`
+  (rename/confirm) — plus heavy actions that return `202 Accepted` with a `job_id`:
+  `POST /speakers/merge`, `POST /speakers/{id}/split`, `POST /diary/{date}/resummarize`,
+  `POST /jobs/{id}/retry`. Speaker merge/split run as durable pipeline jobs
+  (`speaker_merge` / `speaker_split`).
 
 ## [0.2.0] - 2026-06-09
 

@@ -44,3 +44,39 @@ class PendingDevice(BaseModel):
 
     volume: str
     registered: bool = False
+
+
+# --- command request bodies (11 §3) ---
+
+
+class DeviceRegister(BaseModel):
+    volume: str
+    name: str | None = None
+    auto_delete: bool | None = None
+
+
+class DeviceUpdate(BaseModel):
+    name: str | None = None
+    auto_delete: bool | None = None
+    transcode_policy: str | None = None
+    min_free_bytes: int | None = None
+
+
+class SpeakerUpdate(BaseModel):
+    display_name: str | None = None
+    is_provisional: bool | None = None
+
+
+class SpeakerMerge(BaseModel):
+    source_id: int
+    target_id: int
+
+
+class SpeakerSplit(BaseModel):
+    recording_id: str  # the recording to peel off; the speaker is the path id
+
+
+class JobAccepted(BaseModel):
+    """202 response for commands that enqueue background work (11 §1)."""
+
+    job_id: int

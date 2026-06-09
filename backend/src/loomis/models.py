@@ -47,6 +47,8 @@ class JobType(StrEnum):
     CLASSIFY = "classify"
     DIARY_AGGREGATE = "diary_aggregate"
     MEETING_EXTRACT = "meeting_extract"
+    SPEAKER_MERGE = "speaker_merge"  # user command: fold one identity into another (FR-5.5)
+    SPEAKER_SPLIT = "speaker_split"  # user command: peel a recording into a new identity (FR-5.5)
     CLOUD_SYNC = "cloud_sync"
 
 
