@@ -13,6 +13,12 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `job.updated` / `device.connected` / `recording.added` events (the WebSocket that
   relays them to the UI lands next). Opt-out via `[api].run_daemon` (off in tests).
   The standalone `loomis worker` / `loomis backup` CLIs remain for headless use.
+- **M3 REST read API** (FR-7.2–7.6, 11 §3): read-only `/api/v1` endpoints for
+  devices (incl. `pending`), recordings + transcripts + audio streaming (HTTP Range),
+  timeline, diary, meetings, speakers, jobs, and full-text `search` (FTS5, maintained
+  from the repository layer — migration 006). Cursor pagination, a normalized
+  `{"error": {code, message}}` envelope, and an auto-published OpenAPI schema (the
+  basis for the frontend's typed client).
 
 ## [0.2.0] - 2026-06-09
 

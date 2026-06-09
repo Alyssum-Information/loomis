@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, db
+from .api import install_error_handlers
+from .api import router as api_router
 from .config import Settings, get_settings
 from .daemon import Daemon
 from .events import EventBus
@@ -55,6 +57,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             conn.close()
 
     app = FastAPI(title="Loomis", version=__version__, lifespan=lifespan)
+    # Available to request handlers (the per-request DB dependency reads it).
+    app.state.settings = settings
 
     if settings.api.cors_origins:
         app.add_middleware(
@@ -72,8 +76,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "db_version": getattr(app.state, "db_version", None),
         }
 
+    install_error_handlers(app)
+    app.include_router(api_router, prefix=API_PREFIX)
+
     # Prod: serve the built SPA from the backend (dev uses the Vite server instead).
     # html=True makes unknown paths fall back to index.html for client-side routing.
+    # Mounted last so it only catches paths the API router didn't.
     if settings.api.serve_spa and _SPA_DIST.is_dir():
         app.mount("/", StaticFiles(directory=_SPA_DIST, html=True), name="spa")
 

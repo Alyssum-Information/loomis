@@ -184,12 +184,34 @@ CREATE TABLE diary_meeting_links (
 );
 """
 
+# 006 — M3 search: an FTS5 full-text index over transcripts, diaries, and meetings
+# (FR-7.5, 05 §5). The index is maintained from the repository layer (not triggers)
+# so migrations stay single-statement and the write path is explicit/testable. The
+# backfill below indexes any content that already exists.
+_MIGRATION_006 = """
+CREATE VIRTUAL TABLE search_fts USING fts5(ref_kind UNINDEXED, ref_id UNINDEXED, title, body);
+
+INSERT INTO search_fts (ref_kind, ref_id, title, body)
+    SELECT 'recording', recording_id, '', COALESCE(text, '') FROM transcripts;
+
+INSERT INTO search_fts (ref_kind, ref_id, title, body)
+    SELECT 'diary', date, COALESCE(title, ''),
+           COALESCE(json_extract(metadata, '$.narrative_markdown'), '')
+    FROM diary_entries;
+
+INSERT INTO search_fts (ref_kind, ref_id, title, body)
+    SELECT 'meeting', id, COALESCE(title, ''),
+           COALESCE(json_extract(metadata, '$.summary_markdown'), '')
+    FROM meetings;
+"""
+
 MIGRATIONS: Sequence[tuple[int, str]] = (
     (1, _MIGRATION_001),
     (2, _MIGRATION_002),
     (3, _MIGRATION_003),
     (4, _MIGRATION_004),
     (5, _MIGRATION_005),
+    (6, _MIGRATION_006),
 )
 
 
