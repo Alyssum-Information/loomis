@@ -9,9 +9,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Record-centric pipeline view** (FR-7.6): new `GET /api/v1/pipeline` returns one row
   per recording with its stage states — **備份 backup** (the safety-spine import),
-  **語音轉文字 STT** (folds transcode/stt/diarize/speaker_id), and **摘要 summary**
-  (folds classify/diary_aggregate/meeting_extract). Each stage is `pending` / `active`
-  / `done` / `failed`, with the failed stage exposing its retryable `job_id`. The web
+  **語音轉文字 STT** (transcript readiness: transcode/stt), and **摘要 summary** (the
+  post-transcript work: diarize/speaker_id/classify/diary_aggregate/meeting_extract).
+  A stage is `done` (green) when complete, `active` (blue) only while a job is actually
+  running, `failed` when a job parked, else `pending` (grey — not started or queued).
+  The failed stage exposes its retryable `job_id`. The web
   **Jobs** screen is replaced by a per-recording **Records** screen (`/records`) showing
   a backup → STT → summary progress per recording (was a raw per-job table).
 - **`install.sh` / `install.ps1`** at the repo root: one command installs **all

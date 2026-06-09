@@ -780,20 +780,28 @@ def list_jobs(conn: sqlite3.Connection, *, status: str | None = None, limit: int
 
 
 # Pipeline stages, as job-type buckets, for the record-centric Records view (FR-7.6).
-_STT_JOB_TYPES = frozenset(
-    {JobType.TRANSCODE, JobType.STT, JobType.DIARIZE, JobType.SPEAKER_ID}
-)
+# STT covers transcript readiness only (transcode + stt) so the stage turns green as
+# soon as the transcript is viewable. Speaker labeling (diarize, speaker_id) runs after
+# the transcript on the way to the summary, so it sits in the summary bucket — its
+# failures still surface, without holding back the STT stage.
+_STT_JOB_TYPES = frozenset({JobType.TRANSCODE, JobType.STT})
 _SUMMARY_JOB_TYPES = frozenset(
-    {JobType.CLASSIFY, JobType.DIARY_AGGREGATE, JobType.MEETING_EXTRACT}
+    {
+        JobType.DIARIZE,
+        JobType.SPEAKER_ID,
+        JobType.CLASSIFY,
+        JobType.DIARY_AGGREGATE,
+        JobType.MEETING_EXTRACT,
+    }
 )
 
 
 def _reduce_stage(jobs: list[Job]) -> PipelineStage:
     """Collapse a bucket of a recording's jobs into a single stage state.
 
-    failed/parked wins (it blocks the file and is what the user retries); otherwise any
-    in-flight job is ``active``; an empty bucket is ``pending`` (not enqueued yet); all
-    terminal-done is ``done``.
+    failed/parked wins (it blocks the file and is what the user retries); a job actually
+    ``running`` is ``active`` (blue); all-done is ``done`` (green); anything else — an
+    empty bucket, or jobs merely ``queued`` and waiting — is ``pending`` (grey).
     """
     if not jobs:
         return PipelineStage(state=StageState.PENDING)
@@ -804,9 +812,11 @@ def _reduce_stage(jobs: list[Job]) -> PipelineStage:
         return PipelineStage(
             state=StageState.FAILED, job_id=blocking.id, error=blocking.last_error
         )
-    if any(j.status in (JobStatus.QUEUED, JobStatus.RUNNING) for j in jobs):
+    if any(j.status == JobStatus.RUNNING for j in jobs):
         return PipelineStage(state=StageState.ACTIVE)
-    return PipelineStage(state=StageState.DONE)
+    if all(j.status == JobStatus.DONE for j in jobs):
+        return PipelineStage(state=StageState.DONE)
+    return PipelineStage(state=StageState.PENDING)  # queued / waiting
 
 
 def pipeline_rows(

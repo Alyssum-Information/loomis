@@ -64,22 +64,32 @@ def test_imported_no_jobs_backup_done_rest_pending(conn: sqlite3.Connection) -> 
     assert row.summary.state == StageState.PENDING
 
 
-def test_stt_queued_is_active(conn: sqlite3.Connection) -> None:
+def test_stt_queued_is_pending_not_active(conn: sqlite3.Connection) -> None:
     _add_recording(conn, "r1")
     repository.enqueue_job(conn, JobType.STT, {"recording_id": "r1"})
     row = _only(conn)
-    assert row.stt.state == StageState.ACTIVE
+    # A merely-queued job is grey/pending, not blue/active.
+    assert row.stt.state == StageState.PENDING
     assert row.summary.state == StageState.PENDING
 
 
-def test_stt_done_summary_active(conn: sqlite3.Connection) -> None:
+def test_stt_running_is_active(conn: sqlite3.Connection) -> None:
+    _add_recording(conn, "r1")
+    stt = repository.enqueue_job(conn, JobType.STT, {"recording_id": "r1"})
+    _set_status(conn, stt, JobStatus.RUNNING)
+    row = _only(conn)
+    assert row.stt.state == StageState.ACTIVE
+
+
+def test_stt_done_turns_green_even_while_summary_pending(conn: sqlite3.Connection) -> None:
     _add_recording(conn, "r1")
     stt = repository.enqueue_job(conn, JobType.STT, {"recording_id": "r1"})
     _set_status(conn, stt, JobStatus.DONE)
-    repository.enqueue_job(conn, JobType.CLASSIFY, {"recording_id": "r1"})
+    # diarization queued downstream (transcript already viewable) → STT stays green.
+    repository.enqueue_job(conn, JobType.DIARIZE, {"recording_id": "r1"})
     row = _only(conn)
     assert row.stt.state == StageState.DONE
-    assert row.summary.state == StageState.ACTIVE
+    assert row.summary.state == StageState.PENDING
 
 
 def test_parked_stt_surfaces_failed_with_retry_job(conn: sqlite3.Connection) -> None:
@@ -98,15 +108,17 @@ def test_quarantined_recording_backup_failed(conn: sqlite3.Connection) -> None:
     assert row.backup.state == StageState.FAILED
 
 
-def test_multiple_stt_types_bucketed_together(conn: sqlite3.Connection) -> None:
+def test_parked_diarize_surfaces_as_summary_failure(conn: sqlite3.Connection) -> None:
     _add_recording(conn, "r1")
-    tc = repository.enqueue_job(conn, JobType.TRANSCODE, {"recording_id": "r1"})
-    _set_status(conn, tc, JobStatus.DONE)
+    stt = repository.enqueue_job(conn, JobType.STT, {"recording_id": "r1"})
+    _set_status(conn, stt, JobStatus.DONE)
     diar = repository.enqueue_job(conn, JobType.DIARIZE, {"recording_id": "r1"})
-    _set_status(conn, diar, JobStatus.RUNNING)
+    _set_status(conn, diar, JobStatus.PARKED, "hf_token missing")
     row = _only(conn)
-    # transcode done but diarize running → STT stage still active (not done)
-    assert row.stt.state == StageState.ACTIVE
+    # Transcript is ready (STT green); the diarize failure shows on the summary stage.
+    assert row.stt.state == StageState.DONE
+    assert row.summary.state == StageState.FAILED
+    assert row.summary.job_id == diar
 
 
 def test_done_recording_all_stages_done_without_jobs(conn: sqlite3.Connection) -> None:

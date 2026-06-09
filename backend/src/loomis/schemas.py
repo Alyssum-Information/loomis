@@ -62,8 +62,9 @@ class RecordPipeline(BaseModel):
     """A recording tracked through its processing stages: backup → STT → summary (FR-7.6).
 
     The Records screen renders one of these per recording. ``backup`` reflects the
-    safety-spine import (no job); ``stt`` folds transcode/stt/diarize/speaker_id;
-    ``summary`` folds classify/diary_aggregate/meeting_extract.
+    safety-spine import (no job); ``stt`` covers transcript readiness (transcode/stt);
+    ``summary`` folds the post-transcript work (diarize/speaker_id/classify/
+    diary_aggregate/meeting_extract).
     """
 
     recording_id: str
