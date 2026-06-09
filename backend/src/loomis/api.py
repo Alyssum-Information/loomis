@@ -38,6 +38,7 @@ from .schemas import (
     JobAccepted,
     Page,
     PendingDevice,
+    RecordPipeline,
     RetryResult,
     SearchHit,
     SpeakerMerge,
@@ -207,6 +208,14 @@ def search(
 @router.get("/jobs", response_model=list[Job])
 def list_jobs(conn: Conn, status: str | None = None, limit: Limit = 100) -> list[Job]:
     return repository.list_jobs(conn, status=status, limit=limit)
+
+
+@router.get("/pipeline", response_model=Page[RecordPipeline])
+def list_pipeline(conn: Conn, limit: Limit = 50, cursor: str | None = None) -> Page[RecordPipeline]:
+    """Record-centric processing view (FR-7.6): one row per recording, newest first."""
+    offset = _offset(cursor)
+    items, has_more = repository.pipeline_rows(conn, limit=limit, offset=offset)
+    return Page(items=items, next_cursor=_next_cursor(offset, limit, has_more=has_more))
 
 
 # --- commands: quick writes return the resource; heavy work returns 202 + job_id ---

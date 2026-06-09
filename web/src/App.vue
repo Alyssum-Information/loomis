@@ -1,25 +1,16 @@
 <template>
   <v-app>
-    <v-navigation-drawer permanent>
-      <v-list-item class="py-3" prepend-icon="mdi-waveform" subtitle="lifelog" title="Loomis" />
-      <v-divider />
+    <v-app-bar>
+      <template #prepend>
+        <v-app-bar-nav-icon @click="drawer = !drawer" />
+      </template>
 
-      <v-list density="compact" nav>
-        <v-list-item
-          v-for="item in nav"
-          :key="item.to"
-          :prepend-icon="item.icon"
-          :title="item.title"
-          :to="item.to"
-        />
-      </v-list>
-    </v-navigation-drawer>
+      <v-app-bar-title>
+        <v-icon icon="mdi-waveform" />
+        Loomis
+      </v-app-bar-title>
 
-    <v-app-bar flat>
-      <v-app-bar-title>{{ route.name ?? 'Loomis' }}</v-app-bar-title>
-      <v-spacer />
-
-      <div class="search-wrap mr-4">
+      <div class="search-wrap">
         <v-text-field
           v-model="q"
           clearable
@@ -55,26 +46,53 @@
         </v-card>
       </div>
 
-      <v-chip
-        class="mr-4"
-        :color="events.connected ? 'success' : 'grey'"
-        label
-        size="small"
-        variant="tonal"
-      >
-        <v-icon size="small" start>mdi-circle</v-icon>
-        {{ events.connected ? 'live' : 'offline' }}
-      </v-chip>
+      <v-spacer />
     </v-app-bar>
+
+    <v-navigation-drawer v-model="drawer">
+      <v-list density="compact" nav>
+        <v-list-item
+          v-for="item in nav"
+          :key="item.to"
+          :prepend-icon="item.icon"
+          :title="item.title"
+          :to="item.to"
+        />
+      </v-list>
+    </v-navigation-drawer>
 
     <v-main>
       <router-view />
     </v-main>
 
+    <v-footer app class="system-bar text-caption px-4 py-0" height="26">
+      <v-icon :color="events.connected ? 'success' : 'grey'" size="10">mdi-circle</v-icon>
+      <span class="ml-1">{{ events.connected ? 'live' : 'offline' }}</span>
+
+      <template v-if="jobStats.length > 0">
+        <span class="mx-2 text-disabled">·</span>
+
+        <span v-for="p in jobStats" :key="p.label" class="mr-2" :class="p.cls">
+          {{ p.count }} {{ p.label }}
+        </span>
+      </template>
+
+      <v-spacer />
+
+      <template v-if="health.data">
+        <span>Loomis v{{ health.data.version }}</span>
+        <span class="mx-2 text-disabled">·</span>
+        <span>DB schema {{ health.data.db_version }}</span>
+      </template>
+
+      <span v-else-if="health.error" class="text-error">backend offline</span>
+      <span v-else class="text-disabled">connecting…</span>
+    </v-footer>
+
     <v-snackbar v-model="newDevice" location="bottom right" :timeout="-1">
       A new recorder was connected.
       <template #actions>
-        <v-btn color="primary" to="/devices" variant="text" @click="newDevice = false">
+        <v-btn color="primary" to="/" variant="text" @click="newDevice = false">
           Manage
         </v-btn>
       </template>
@@ -84,14 +102,39 @@
 
 <script lang="ts" setup>
   import { computed, onMounted, ref } from 'vue'
-  import { useRoute, useRouter } from 'vue-router'
-  import { search, type SearchHit } from '@/services/api'
+  import { useRouter } from 'vue-router'
+  import { type Job, listJobs, search, type SearchHit } from '@/services/api'
   import { useEventsStore } from '@/stores/events'
+  import { useHealthStore } from '@/stores/health'
 
-  const route = useRoute()
   const router = useRouter()
   const events = useEventsStore()
+  const health = useHealthStore()
   const newDevice = ref(false)
+  const drawer = ref(true)
+
+  // Pipeline job counts shown in the system bar, newest figures pushed live.
+  const jobs = ref<Job[]>([])
+
+  const jobStats = computed<{ label: string, count: number, cls: string }[]>(() => {
+    const counts: Record<string, number> = {}
+    for (const job of jobs.value) counts[job.status] = (counts[job.status] ?? 0) + 1
+    const order: [string, string][] = [
+      ['running', 'text-info'],
+      ['queued', ''],
+      ['parked', 'text-error'],
+      ['failed', 'text-error'],
+    ]
+    return order
+      .filter(([key]) => counts[key])
+      .map(([key, cls]) => ({ label: key, count: counts[key], cls }))
+  })
+
+  async function refreshJobs (): Promise<void> {
+    try {
+      jobs.value = await listJobs({ limit: 200 })
+    } catch { /* system-bar counts are best-effort */ }
+  }
 
   const q = ref('')
   const results = ref<SearchHit[]>([])
@@ -103,8 +146,7 @@
     { title: 'Dashboard', icon: 'mdi-view-dashboard', to: '/' },
     { title: 'Timeline', icon: 'mdi-timeline-clock', to: '/timeline' },
     { title: 'Speakers', icon: 'mdi-account-voice', to: '/speakers' },
-    { title: 'Devices', icon: 'mdi-usb-flash-drive', to: '/devices' },
-    { title: 'Jobs', icon: 'mdi-cog-sync', to: '/jobs' },
+    { title: 'Records', icon: 'mdi-cog-sync', to: '/records' },
   ]
 
   async function run (): Promise<void> {
@@ -146,8 +188,13 @@
   }
 
   onMounted(() => {
+    health.refresh()
+    refreshJobs()
     events.connect()
     events.on(event => {
+      if (event.type === 'job.updated' || event.type === 'recording.added') {
+        refreshJobs()
+      }
       if (event.type === 'device.connected' && event.data.registered === false) {
         newDevice.value = true
       }
@@ -169,5 +216,9 @@
   margin-top: 4px;
   max-height: 60vh;
   overflow-y: auto;
+}
+.system-bar {
+  border-top: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+  min-height: 26px;
 }
 </style>

@@ -123,6 +123,31 @@ export interface SearchHit {
   snippet: string
 }
 
+export type StageState = 'pending' | 'active' | 'done' | 'failed'
+
+export interface PipelineStage {
+  state: StageState
+  job_id?: number | null
+  error?: string | null
+}
+
+export interface RecordPipeline {
+  recording_id: string
+  name: string
+  device_id: string
+  device_name?: string | null
+  kind?: string | null
+  status: string
+  recorded_at?: string | null
+  imported_at?: string | null
+  duration_s?: number | null
+  size_bytes: number
+  backup: PipelineStage
+  stt: PipelineStage
+  summary: PipelineStage
+  updated_at?: string | null
+}
+
 export interface PendingDevice {
   volume: string
   registered: boolean
@@ -226,6 +251,10 @@ export function search (q: string, limit = 50): Promise<SearchHit[]> {
 
 export function listJobs (params?: { status?: string, limit?: number }): Promise<Job[]> {
   return getJson<Job[]>('/jobs', params)
+}
+
+export function getRecords (params?: { limit?: number, cursor?: string }): Promise<Page<RecordPipeline>> {
+  return getJson<Page<RecordPipeline>>('/pipeline', params)
 }
 
 // --- commands (writes) ---

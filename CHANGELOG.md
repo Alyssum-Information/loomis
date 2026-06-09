@@ -7,6 +7,13 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Record-centric pipeline view** (FR-7.6): new `GET /api/v1/pipeline` returns one row
+  per recording with its stage states — **備份 backup** (the safety-spine import),
+  **語音轉文字 STT** (folds transcode/stt/diarize/speaker_id), and **摘要 summary**
+  (folds classify/diary_aggregate/meeting_extract). Each stage is `pending` / `active`
+  / `done` / `failed`, with the failed stage exposing its retryable `job_id`. The web
+  **Jobs** screen is replaced by a per-recording **Records** screen (`/records`) showing
+  a backup → STT → summary progress per recording (was a raw per-job table).
 - **`install.sh` / `install.ps1`** at the repo root: one command installs **all
   baseline requirements** for the full pipeline — uv, Node + pnpm, ffmpeg, Ollama
   (+ the default model), and the backend STT/diarize/LLM extras + web deps — so
@@ -18,6 +25,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the Jobs screen gains a **Retry all** button.
 - `loomis check` now reports whether the optional `whisperx` / `pyannote` Python
   modules are importable.
+
+### Fixed
+- **speaker_id no longer needs torchcodec**: the pyannote embedder now decodes audio
+  with whisperx's ffmpeg CLI and hands pyannote an in-memory `{waveform, sample_rate}`
+  dict instead of a file path. File-path decoding routed through torchcodec, whose
+  Windows DLLs frequently fail to load (mismatched ffmpeg shared libs) — parking the
+  `speaker_id` step. STT and diarization already used the in-memory path. The harmless
+  torchcodec import warning is also muted.
 
 ### Changed
 - **GPU PyTorch by default**: the installer now installs the **CUDA** torch build.

@@ -82,8 +82,10 @@ a typed client.
 | Method | Path | Purpose | Traces |
 |--------|------|---------|--------|
 | GET | `/search?q=` | full-text across transcripts/diary/meetings | FR-7.5 |
-| GET | `/jobs` | queued/running/failed steps | FR-7.6 |
+| GET | `/pipeline` | record-centric view: one row per recording with backup/STT/summary stage states (cursor-paged) | FR-7.6 |
+| GET | `/jobs` | queued/running/failed steps (raw) | FR-7.6 |
 | POST | `/jobs/{id}/retry` | retry a failed step | FR-7.6 |
+| POST | `/jobs/retry-all` | requeue every failed/parked step | FR-7.6 |
 | GET | `/settings` / PATCH `/settings` | read/update config (egress-flagged) | FR-7.7/7.8 |
 | GET | `/cloud/remotes` | configured rclone remotes | FR-8.2 |
 | POST | `/cloud/sync` | trigger a sync (→ job) | FR-8.3 |
