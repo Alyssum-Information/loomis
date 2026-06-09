@@ -13,6 +13,7 @@
           <th>Attempts</th>
           <th>Last error</th>
           <th>Updated</th>
+          <th />
         </tr>
       </thead>
 
@@ -24,10 +25,22 @@
           <td>{{ job.attempts }}</td>
           <td class="text-error text-truncate" style="max-width: 280px">{{ job.last_error }}</td>
           <td class="text-medium-emphasis">{{ job.updated_at }}</td>
+
+          <td class="text-right">
+            <v-btn
+              v-if="job.status === 'failed' || job.status === 'parked'"
+              color="primary"
+              size="small"
+              variant="text"
+              @click="retry(job.id)"
+            >
+              Retry
+            </v-btn>
+          </td>
         </tr>
 
         <tr v-if="jobs.length === 0">
-          <td class="text-medium-emphasis" colspan="6">No jobs.</td>
+          <td class="text-medium-emphasis" colspan="7">No jobs.</td>
         </tr>
       </tbody>
     </v-table>
@@ -36,7 +49,7 @@
 
 <script lang="ts" setup>
   import { onMounted, ref } from 'vue'
-  import { type Job, listJobs } from '@/services/api'
+  import { type Job, listJobs, retryJob } from '@/services/api'
   import { useEventsStore } from '@/stores/events'
 
   const jobs = ref<Job[]>([])
@@ -51,6 +64,15 @@
     try {
       jobs.value = await listJobs({ limit: 200 })
       error.value = null
+    } catch (error_) {
+      error.value = error_ instanceof Error ? error_.message : String(error_)
+    }
+  }
+
+  async function retry (id: number): Promise<void> {
+    try {
+      await retryJob(id)
+      await refresh()
     } catch (error_) {
       error.value = error_ instanceof Error ? error_.message : String(error_)
     }

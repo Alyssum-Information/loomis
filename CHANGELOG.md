@@ -34,6 +34,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Dashboard, Timeline, Recording detail (audio player with click-to-seek transcript),
   Diary, Meeting, Search, and Jobs — over a typed API client and a WebSocket store
   that refreshes views from `job.updated` / `recording.added` / `diary.updated` events.
+- **M3 web UI — management screens** (FR-1.3, 1.7, 5.5, 7.6): a Speakers screen
+  (rename, confirm, merge, split), a Devices screen (register pending volumes, edit
+  per-device settings) with a new-device prompt driven by `device.connected`, and a
+  Retry action on the Jobs screen — completing the browsable-product milestone (M3).
 
 ## [0.2.0] - 2026-06-09
 

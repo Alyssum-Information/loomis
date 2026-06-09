@@ -122,6 +122,15 @@ export interface SearchHit {
   snippet: string
 }
 
+export interface PendingDevice {
+  volume: string
+  registered: boolean
+}
+
+export interface JobAccepted {
+  job_id: number
+}
+
 // --- fetch helpers ---
 
 type Params = Record<string, string | number | undefined | null>
@@ -140,17 +149,33 @@ function query (params?: Params): string {
   return s ? `?${s}` : ''
 }
 
+async function parseError (res: Response): Promise<never> {
+  let message = `HTTP ${res.status}`
+  try {
+    const body = await res.json() as { error?: { message?: string } }
+    if (body.error?.message) {
+      message = body.error.message
+    }
+  } catch { /* non-JSON error body */ }
+  throw new Error(message)
+}
+
 async function getJson<T> (path: string, params?: Params): Promise<T> {
   const res = await fetch(`${BASE}${path}${query(params)}`)
   if (!res.ok) {
-    let message = `HTTP ${res.status}`
-    try {
-      const body = await res.json() as { error?: { message?: string } }
-      if (body.error?.message) {
-        message = body.error.message
-      }
-    } catch { /* non-JSON error body */ }
-    throw new Error(message)
+    await parseError(res)
+  }
+  return await res.json() as T
+}
+
+async function sendJson<T> (method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  if (!res.ok) {
+    await parseError(res)
   }
   return await res.json() as T
 }
@@ -193,4 +218,47 @@ export function search (q: string, limit = 50): Promise<SearchHit[]> {
 
 export function listJobs (params?: { status?: string, limit?: number }): Promise<Job[]> {
   return getJson<Job[]>('/jobs', params)
+}
+
+// --- commands (writes) ---
+
+export function getPendingDevices (): Promise<PendingDevice[]> {
+  return getJson<PendingDevice[]>('/devices/pending')
+}
+
+export function registerDevice (
+  body: { volume: string, name?: string, auto_delete?: boolean },
+): Promise<Device> {
+  return sendJson<Device>('POST', '/devices/register', body)
+}
+
+export function updateDevice (
+  id: string,
+  body: {
+    name?: string
+    auto_delete?: boolean
+    transcode_policy?: string
+    min_free_bytes?: number
+  },
+): Promise<Device> {
+  return sendJson<Device>('PATCH', `/devices/${id}`, body)
+}
+
+export function updateSpeaker (
+  id: number,
+  body: { display_name?: string, is_provisional?: boolean },
+): Promise<Speaker> {
+  return sendJson<Speaker>('PATCH', `/speakers/${id}`, body)
+}
+
+export function mergeSpeakers (sourceId: number, targetId: number): Promise<JobAccepted> {
+  return sendJson<JobAccepted>('POST', '/speakers/merge', { source_id: sourceId, target_id: targetId })
+}
+
+export function splitSpeaker (id: number, recordingId: string): Promise<JobAccepted> {
+  return sendJson<JobAccepted>('POST', `/speakers/${id}/split`, { recording_id: recordingId })
+}
+
+export function retryJob (id: number): Promise<JobAccepted> {
+  return sendJson<JobAccepted>('POST', `/jobs/${id}/retry`)
 }
