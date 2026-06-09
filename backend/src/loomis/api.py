@@ -8,18 +8,30 @@ normalized to ``{"error": {"code", "message"}}`` (11 §1).
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
+from queue import Empty
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import db, repository
 from .config import Settings
 from .devicefile import device_file_path
+from .events import EventBus
 from .models import Device, DiaryEntry, Job, Meeting, Recording, Speaker
 from .schemas import Page, PendingDevice, SearchHit, TimelineDay, TranscriptDetail
 from .watcher import removable_volumes
@@ -181,6 +193,39 @@ def search(
 @router.get("/jobs", response_model=list[Job])
 def list_jobs(conn: Conn, status: str | None = None, limit: Limit = 100) -> list[Job]:
     return repository.list_jobs(conn, status=status, limit=limit)
+
+
+@router.websocket("/ws")
+async def ws(websocket: WebSocket) -> None:
+    """Relay backend events to the SPA (11 §4): job/device/recording/diary updates.
+
+    Subscribes to the in-process event bus and forwards each event as JSON. The bus
+    queue is a (blocking, thread-safe) ``queue.Queue`` fed by the daemon's worker
+    threads, so we pull it off-loop via ``to_thread`` with a short timeout; the
+    timeout also lets us notice a client that has gone away.
+    """
+    bus: EventBus = websocket.app.state.bus
+    await websocket.accept()
+    queue = bus.subscribe()
+
+    async def _watch_close() -> None:
+        # Reading detects the client closing; we ignore any payload it sends.
+        while True:
+            await websocket.receive_text()
+
+    closed = asyncio.create_task(_watch_close())
+    try:
+        while not closed.done():
+            try:
+                event = await asyncio.to_thread(queue.get, True, 1.0)
+            except Empty:
+                continue
+            await websocket.send_json({"type": event.type, "data": event.data})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        closed.cancel()
+        bus.unsubscribe(queue)
 
 
 def install_error_handlers(app: FastAPI) -> None:

@@ -59,7 +59,7 @@ class JobRunner:
             repository.fail_job(conn, job_id, f"no handler for {job.type}", max_attempts=1)
             return True
         try:
-            handler(JobContext(conn, self.settings), job)
+            handler(JobContext(conn, self.settings, self._bus), job)
             repository.complete_job(conn, job_id)
             log.info("job %s (%s) done", job_id, job.type)
             self._emit(job_id, job.type, JobStatus.DONE.value, job.attempts)
