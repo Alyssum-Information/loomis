@@ -12,6 +12,7 @@ from loomis import backup, db, pipeline, repository
 from loomis.config import (
     CoreSettings,
     DiarizeSettings,
+    LlmSettings,
     Settings,
     SpeakerIdSettings,
     SttSettings,
@@ -23,12 +24,13 @@ _AUDIO = b"RIFF\x00\x00\x00\x00WAVEfake-audio" * 8
 
 
 def _settings(tmp_path: Path) -> Settings:
-    # Null engines keep the test offline (no torch/whisperx/pyannote, no GPU).
+    # Null engines/provider keep the test offline (no torch/whisperx/pyannote/network).
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),
+        llm=LlmSettings(provider="null"),
     )
 
 
@@ -68,7 +70,7 @@ def test_backup_then_stt_persists_transcript(tmp_path: Path) -> None:
     backup.run_backup(conn, device, vol, settings)  # keep_original → enqueues stt
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 3  # stt → diarize → speaker_id
+    assert processed == 5  # stt → diarize → speaker_id → classify → diary_aggregate
 
     t = conn.execute("SELECT * FROM transcripts").fetchone()
     assert t is not None
@@ -107,7 +109,7 @@ def test_transcode_only_replaces_original_then_transcribes(
     backup.run_backup(conn, device, vol, settings)  # policy != keep_original → enqueues transcode
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 4  # transcode → stt → diarize → speaker_id
+    assert processed == 6  # transcode → stt → diarize → speaker_id → classify → diary_aggregate
 
     rec = conn.execute("SELECT library_path, codec, status FROM recordings").fetchone()
     assert rec["codec"] == "opus"

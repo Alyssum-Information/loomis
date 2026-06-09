@@ -13,11 +13,14 @@ import sqlite3
 
 from .models import (
     Device,
+    DiaryEntry,
     Job,
     JobStatus,
     JobType,
+    Meeting,
     Quarantine,
     Recording,
+    RecordingKind,
     RecordingStatus,
     Segment,
     Speaker,
@@ -172,6 +175,35 @@ def set_recording_library(
         "UPDATE recordings SET library_path = ?, codec = ? WHERE id = ?",
         (library_path, codec, recording_id),
     )
+
+
+def set_recording_kind(conn: sqlite3.Connection, recording_id: str, kind: RecordingKind) -> None:
+    """Record the diary/meeting classification of a recording (FR-6.1)."""
+    conn.execute("UPDATE recordings SET kind = ? WHERE id = ?", (kind.value, recording_id))
+
+
+# Local calendar day from the recording's timestamp (date portion of recorded_at,
+# falling back to imported_at). Timezone-aware day boundaries are deferred.
+_LOCAL_DATE = "substr(COALESCE(recorded_at, imported_at), 1, 10)"
+
+
+def recording_local_date(conn: sqlite3.Connection, recording_id: str) -> str | None:
+    row = conn.execute(
+        f"SELECT {_LOCAL_DATE} AS d FROM recordings WHERE id = ?",  # noqa: S608
+        (recording_id,),
+    ).fetchone()
+    return str(row["d"]) if row is not None and row["d"] is not None else None
+
+
+def diary_recordings_for_date(conn: sqlite3.Connection, date: str) -> list[Recording]:
+    """All diary-kind recordings on a local day, chronological (feed the daily entry)."""
+    rows = conn.execute(
+        "SELECT * FROM recordings "  # noqa: S608 (_LOCAL_DATE is a constant, no user input)
+        f"WHERE kind = 'diary' AND {_LOCAL_DATE} = ? "
+        "ORDER BY COALESCE(recorded_at, imported_at)",
+        (date,),
+    ).fetchall()
+    return [Recording.from_row(r) for r in rows]
 
 
 # --- durable job queue (04 §7) ---
@@ -386,3 +418,96 @@ def speaker_centroids(conn: sqlite3.Connection) -> list[tuple[int, Vector]]:
     for r in rows:
         by_speaker.setdefault(int(r["speaker_id"]), []).append(blob_to_vec(r["embedding"]))
     return [(sid, centroid(vecs)) for sid, vecs in by_speaker.items()]
+
+
+def speaker_display_names(conn: sqlite3.Connection) -> dict[int, str]:
+    """Map speaker id → a human name, falling back to ``Speaker <id>`` for unnamed ones."""
+    rows = conn.execute("SELECT id, display_name FROM speakers").fetchall()
+    return {int(r["id"]): (r["display_name"] or f"Speaker {r['id']}") for r in rows}
+
+
+# --- diary + meeting summaries (FR-6.2–6.6) ---
+
+
+def replace_diary_entry(
+    conn: sqlite3.Connection, entry: DiaryEntry, recording_ids: list[str]
+) -> None:
+    """Upsert one entry per local day (idempotent re-summary): drop prior, insert fresh.
+
+    ``diary_recordings`` and ``diary_meeting_links`` cascade-delete with the old row.
+    """
+    conn.execute("DELETE FROM diary_entries WHERE date = ?", (entry.date,))
+    conn.execute(
+        """
+        INSERT INTO diary_entries (id, date, title, markdown_path, metadata, model)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            entry.id,
+            entry.date,
+            entry.title,
+            entry.markdown_path,
+            json.dumps(entry.metadata, ensure_ascii=False),
+            entry.model,
+        ),
+    )
+    conn.executemany(
+        "INSERT INTO diary_recordings (diary_entry_id, recording_id) VALUES (?, ?)",
+        [(entry.id, rid) for rid in recording_ids],
+    )
+
+
+def link_diary_meetings(
+    conn: sqlite3.Connection, diary_entry_id: str, meeting_ids: list[str]
+) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO diary_meeting_links (diary_entry_id, meeting_id) VALUES (?, ?)",
+        [(diary_entry_id, mid) for mid in meeting_ids],
+    )
+
+
+def meetings_for_date(conn: sqlite3.Connection, date: str) -> list[Meeting]:
+    rows = conn.execute(
+        "SELECT * FROM meetings WHERE occurred_on = ? ORDER BY created_at", (date,)
+    ).fetchall()
+    return [Meeting.from_row(r) for r in rows]
+
+
+def delete_meetings_for_recording(conn: sqlite3.Connection, recording_id: str) -> None:
+    """Drop any meeting built from this recording so meeting_extract is idempotent."""
+    conn.execute(
+        "DELETE FROM meetings WHERE id IN "
+        "(SELECT meeting_id FROM meeting_recordings WHERE recording_id = ?)",
+        (recording_id,),
+    )
+
+
+def insert_meeting(
+    conn: sqlite3.Connection,
+    meeting: Meeting,
+    *,
+    recording_ids: list[str],
+    participant_ids: list[int],
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO meetings (id, title, occurred_on, markdown_path, metadata, model)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            meeting.id,
+            meeting.title,
+            meeting.occurred_on,
+            meeting.markdown_path,
+            json.dumps(meeting.metadata, ensure_ascii=False),
+            meeting.model,
+        ),
+    )
+    conn.executemany(
+        "INSERT INTO meeting_recordings (meeting_id, recording_id) VALUES (?, ?)",
+        [(meeting.id, rid) for rid in recording_ids],
+    )
+    conn.executemany(
+        "INSERT OR IGNORE INTO meeting_participants (meeting_id, speaker_id) VALUES (?, ?)",
+        [(meeting.id, sid) for sid in participant_ids],
+    )

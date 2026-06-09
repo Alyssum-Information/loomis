@@ -44,6 +44,16 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   creates a new provisional one, or flags uncertain matches for review; per-segment
   speaker labels; idempotent `speaker_id` re-runs.
 
+- **M2 summaries — diary + meetings** (FR-6.1–6.9): the pipeline completes
+  `speaker_id → classify → {diary_aggregate | meeting_extract} → link`. Heuristic
+  diary-vs-meeting classification with optional LLM confirmation; a pluggable
+  `LLMProvider` (Ollama default, dep-free `null` for offline/CI) with
+  schema-validated, retried structured output; first-person daily diary aggregation
+  per local day and standalone meeting records with attendees/decisions/action items;
+  Markdown + JSON sidecars under `diary/` and `meetings/`, with day→meeting back-links.
+  New tables: `diary_entries`, `meetings`, and their join/link tables. Idempotent
+  re-aggregation and re-extraction.
+
 ### Notes
 - M1 import runs as a CLI process. Until the background daemon lands, avoid
   running `loomis backup` and the API server against the same database
@@ -51,4 +61,4 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The pipeline runs via `loomis worker`; WhisperX is an opt-in extra
   (`uv sync --extra stt`) and needs ffmpeg on PATH for transcode.
 
-_See the [roadmap](docs/08-roadmap-and-milestones.md) for what's next (M2: summaries — diary + meetings)._
+_See the [roadmap](docs/08-roadmap-and-milestones.md) for what's next (M3: browsable product — REST/WebSocket API + Vue UI)._

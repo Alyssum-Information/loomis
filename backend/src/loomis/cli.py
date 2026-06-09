@@ -214,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     p_backup.set_defaults(func=_backup)
 
     p_worker = sub.add_parser(
-        "worker", help="run the pipeline job runner (transcode, stt, diarize, speaker_id)"
+        "worker", help="run the pipeline job runner (transcode → … → diarize → summaries)"
     )
     p_worker.add_argument(
         "--once", action="store_true", help="drain the queue once and exit (no polling loop)"
