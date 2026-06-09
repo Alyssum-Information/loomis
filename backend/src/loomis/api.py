@@ -28,12 +28,24 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import db, repository
+from . import backup, db, repository
 from .config import Settings
 from .devicefile import device_file_path
 from .events import EventBus
-from .models import Device, DiaryEntry, Job, Meeting, Recording, Speaker
-from .schemas import Page, PendingDevice, SearchHit, TimelineDay, TranscriptDetail
+from .models import Device, DiaryEntry, Job, JobType, Meeting, Recording, Speaker
+from .schemas import (
+    DeviceRegister,
+    DeviceUpdate,
+    JobAccepted,
+    Page,
+    PendingDevice,
+    SearchHit,
+    SpeakerMerge,
+    SpeakerSplit,
+    SpeakerUpdate,
+    TimelineDay,
+    TranscriptDetail,
+)
 from .watcher import removable_volumes
 
 router = APIRouter()
@@ -51,7 +63,12 @@ def get_conn(request: Request) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def get_app_settings(request: Request) -> Settings:
+    return request.app.state.settings  # type: ignore[no-any-return]
+
+
 Conn = Annotated[sqlite3.Connection, Depends(get_conn)]
+AppSettings = Annotated[Settings, Depends(get_app_settings)]
 Limit = Annotated[int, Query(ge=1, le=_MAX_LIMIT)]
 
 
@@ -193,6 +210,82 @@ def search(
 @router.get("/jobs", response_model=list[Job])
 def list_jobs(conn: Conn, status: str | None = None, limit: Limit = 100) -> list[Job]:
     return repository.list_jobs(conn, status=status, limit=limit)
+
+
+# --- commands: quick writes return the resource; heavy work returns 202 + job_id ---
+
+
+@router.post("/devices/register", response_model=Device, status_code=201)
+def register_device(body: DeviceRegister, conn: Conn, settings: AppSettings) -> Device:
+    """Register a connected volume as a device (FR-1.3); writes device.json + the DB row."""
+    volume = Path(body.volume)
+    if not volume.exists():
+        raise HTTPException(status_code=404, detail="volume not found")
+    return backup.register_or_load_device(
+        conn, volume, settings, name=body.name, auto_delete=body.auto_delete
+    )
+
+
+@router.patch("/devices/{device_id}", response_model=Device)
+def update_device(device_id: str, body: DeviceUpdate, conn: Conn) -> Device:
+    if repository.find_device(conn, device_id) is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    device = repository.update_device(
+        conn,
+        device_id,
+        name=body.name,
+        auto_delete=body.auto_delete,
+        transcode_policy=body.transcode_policy,
+        min_free_bytes=body.min_free_bytes,
+    )
+    assert device is not None  # noqa: S101 (existence checked above)
+    return device
+
+
+@router.patch("/speakers/{speaker_id}", response_model=Speaker)
+def update_speaker(speaker_id: int, body: SpeakerUpdate, conn: Conn) -> Speaker:
+    if repository.find_speaker(conn, speaker_id) is None:
+        raise HTTPException(status_code=404, detail="speaker not found")
+    speaker = repository.update_speaker(
+        conn, speaker_id, display_name=body.display_name, is_provisional=body.is_provisional
+    )
+    assert speaker is not None  # noqa: S101 (existence checked above)
+    return speaker
+
+
+@router.post("/speakers/merge", response_model=JobAccepted, status_code=202)
+def merge_speakers(body: SpeakerMerge, conn: Conn) -> JobAccepted:
+    for sid in (body.source_id, body.target_id):
+        if repository.find_speaker(conn, sid) is None:
+            raise HTTPException(status_code=404, detail=f"speaker {sid} not found")
+    job_id = repository.enqueue_job(
+        conn, JobType.SPEAKER_MERGE, {"source_id": body.source_id, "target_id": body.target_id}
+    )
+    return JobAccepted(job_id=job_id)
+
+
+@router.post("/speakers/{speaker_id}/split", response_model=JobAccepted, status_code=202)
+def split_speaker(speaker_id: int, body: SpeakerSplit, conn: Conn) -> JobAccepted:
+    if repository.find_speaker(conn, speaker_id) is None:
+        raise HTTPException(status_code=404, detail="speaker not found")
+    job_id = repository.enqueue_job(
+        conn, JobType.SPEAKER_SPLIT, {"speaker_id": speaker_id, "recording_id": body.recording_id}
+    )
+    return JobAccepted(job_id=job_id)
+
+
+@router.post("/diary/{date}/resummarize", response_model=JobAccepted, status_code=202)
+def resummarize_diary(date: str, conn: Conn) -> JobAccepted:
+    """Re-run the day's aggregation (FR-6.8). Idempotent: it replaces the entry."""
+    job_id = repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
+    return JobAccepted(job_id=job_id)
+
+
+@router.post("/jobs/{job_id}/retry", response_model=JobAccepted, status_code=202)
+def retry_job(job_id: int, conn: Conn) -> JobAccepted:
+    if not repository.requeue_job(conn, job_id):
+        raise HTTPException(status_code=404, detail="job not found or not retryable")
+    return JobAccepted(job_id=job_id)
 
 
 @router.websocket("/ws")

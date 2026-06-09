@@ -407,6 +407,37 @@ def handle_diary_aggregate(ctx: JobContext, job: Job) -> None:
         ctx.bus.publish("diary.updated", {"date": date})
 
 
+def _payload_int(job: Job, key: str) -> int:
+    value = job.payload.get(key)
+    if not isinstance(value, int):
+        raise ValueError(f"job {job.id} ({job.type}) missing integer payload.{key}")
+    return value
+
+
+def handle_speaker_merge(ctx: JobContext, job: Job) -> None:
+    """Fold the source identity into the target, then delete the source (FR-5.5)."""
+    conn = ctx.conn
+    source_id = _payload_int(job, "source_id")
+    target_id = _payload_int(job, "target_id")
+    if source_id == target_id:
+        return
+    with transaction(conn):
+        repository.reassign_speaker(conn, source_id, target_id)
+        repository.delete_speaker(conn, source_id)
+
+
+def handle_speaker_split(ctx: JobContext, job: Job) -> None:
+    """Peel one recording off an identity into a fresh provisional speaker (FR-5.5)."""
+    conn = ctx.conn
+    speaker_id = _payload_int(job, "speaker_id")
+    rec_id = job.payload.get("recording_id")
+    if not isinstance(rec_id, str):
+        raise ValueError(f"speaker_split job {job.id} missing payload.recording_id")
+    with transaction(conn):
+        new_id = repository.create_speaker(conn)
+        repository.split_recording_to_speaker(conn, speaker_id, rec_id, new_id)
+
+
 HANDLERS: dict[JobType, Handler] = {
     JobType.TRANSCODE: handle_transcode,
     JobType.STT: handle_stt,
@@ -415,4 +446,6 @@ HANDLERS: dict[JobType, Handler] = {
     JobType.CLASSIFY: handle_classify,
     JobType.MEETING_EXTRACT: handle_meeting_extract,
     JobType.DIARY_AGGREGATE: handle_diary_aggregate,
+    JobType.SPEAKER_MERGE: handle_speaker_merge,
+    JobType.SPEAKER_SPLIT: handle_speaker_split,
 }

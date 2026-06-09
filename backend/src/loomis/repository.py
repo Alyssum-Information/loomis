@@ -653,6 +653,105 @@ def get_meeting(conn: sqlite3.Connection, meeting_id: str) -> Meeting | None:
     return Meeting.from_row(row) if row is not None else None
 
 
+def update_device(
+    conn: sqlite3.Connection,
+    device_id: str,
+    *,
+    name: str | None = None,
+    auto_delete: bool | None = None,
+    transcode_policy: str | None = None,
+    min_free_bytes: int | None = None,
+) -> Device | None:
+    """Partial update of device settings (FR-1.7); only provided fields change."""
+    sets: list[str] = []
+    params: list[object] = []
+    if name is not None:
+        sets.append("name = ?")
+        params.append(name)
+    if auto_delete is not None:
+        sets.append("auto_delete = ?")
+        params.append(int(auto_delete))
+    if transcode_policy is not None:
+        sets.append("transcode_policy = ?")
+        params.append(transcode_policy)
+    if min_free_bytes is not None:
+        sets.append("min_free_bytes = ?")
+        params.append(min_free_bytes)
+    if sets:
+        params.append(device_id)
+        conn.execute(
+            f"UPDATE devices SET {', '.join(sets)} WHERE id = ?",  # noqa: S608 (cols literal)
+            params,
+        )
+    return find_device(conn, device_id)
+
+
+def update_speaker(
+    conn: sqlite3.Connection,
+    speaker_id: int,
+    *,
+    display_name: str | None = None,
+    is_provisional: bool | None = None,
+) -> Speaker | None:
+    """Rename / confirm an identity (FR-5.5)."""
+    sets: list[str] = ["updated_at = datetime('now')"]
+    params: list[object] = []
+    if display_name is not None:
+        sets.append("display_name = ?")
+        params.append(display_name)
+    if is_provisional is not None:
+        sets.append("is_provisional = ?")
+        params.append(int(is_provisional))
+    params.append(speaker_id)
+    conn.execute(
+        f"UPDATE speakers SET {', '.join(sets)} WHERE id = ?",  # noqa: S608 (cols literal)
+        params,
+    )
+    return find_speaker(conn, speaker_id)
+
+
+def reassign_speaker(conn: sqlite3.Connection, source_id: int, target_id: int) -> None:
+    """Move all of ``source``'s voiceprints + segment labels onto ``target`` (merge)."""
+    conn.execute(
+        "UPDATE voiceprints SET speaker_id = ? WHERE speaker_id = ?", (target_id, source_id)
+    )
+    conn.execute("UPDATE segments SET speaker_id = ? WHERE speaker_id = ?", (target_id, source_id))
+    conn.execute(
+        "UPDATE devices SET owner_speaker_id = ? WHERE owner_speaker_id = ?",
+        (target_id, source_id),
+    )
+
+
+def delete_speaker(conn: sqlite3.Connection, speaker_id: int) -> None:
+    conn.execute("DELETE FROM speakers WHERE id = ?", (speaker_id,))
+
+
+def split_recording_to_speaker(
+    conn: sqlite3.Connection, speaker_id: int, recording_id: str, new_speaker_id: int
+) -> None:
+    """Reassign one recording's segments + sourced voiceprints from a speaker to a new one."""
+    conn.execute(
+        "UPDATE segments SET speaker_id = ? "
+        "WHERE speaker_id = ? AND transcript_id IN "
+        "(SELECT id FROM transcripts WHERE recording_id = ?)",
+        (new_speaker_id, speaker_id, recording_id),
+    )
+    conn.execute(
+        "UPDATE voiceprints SET speaker_id = ? WHERE speaker_id = ? AND source_recording_id = ?",
+        (new_speaker_id, speaker_id, recording_id),
+    )
+
+
+def requeue_job(conn: sqlite3.Connection, job_id: int) -> bool:
+    """Reset a failed/parked job for a fresh attempt (FR-7.6). Returns True if requeued."""
+    cur = conn.execute(
+        "UPDATE jobs SET status = 'queued', attempts = 0, last_error = NULL, worker_id = NULL, "
+        "updated_at = datetime('now') WHERE id = ? AND status IN ('failed', 'parked')",
+        (job_id,),
+    )
+    return cur.rowcount > 0
+
+
 def list_jobs(conn: sqlite3.Connection, *, status: str | None = None, limit: int) -> list[Job]:
     if status:
         rows = conn.execute(
