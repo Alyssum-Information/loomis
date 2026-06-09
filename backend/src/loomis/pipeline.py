@@ -21,6 +21,7 @@ from . import repository
 from .classify import classify_segments
 from .config import Settings
 from .diarize import DiarTurn, get_diarize_engine
+from .events import EventBus
 from .llm import LLMProvider, complete_structured, get_provider, model_id
 from .models import (
     ClassifyResult,
@@ -57,6 +58,7 @@ log = logging.getLogger(__name__)
 class JobContext:
     conn: sqlite3.Connection
     settings: Settings
+    bus: EventBus | None = None  # present when run under the daemon; None for CLI/tests
 
     @property
     def data_dir(self) -> Path:
@@ -400,6 +402,9 @@ def handle_diary_aggregate(ctx: JobContext, job: Job) -> None:
     with transaction(conn):
         repository.replace_diary_entry(conn, entry, [r.id for r in recordings])
         repository.link_diary_meetings(conn, entry_id, [m.id for m in meetings])
+
+    if ctx.bus is not None:
+        ctx.bus.publish("diary.updated", {"date": date})
 
 
 HANDLERS: dict[JobType, Handler] = {

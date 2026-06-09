@@ -19,6 +19,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from the repository layer — migration 006). Cursor pagination, a normalized
   `{"error": {code, message}}` envelope, and an auto-published OpenAPI schema (the
   basis for the frontend's typed client).
+- **M3 WebSocket** (FR-7.6, 11 §4): `/api/v1/ws` relays in-process bus events to the
+  SPA — `job.updated`, `device.connected`, `recording.added`, and `diary.updated`
+  (emitted by the diary aggregation step) — so the UI reflects backend state without
+  polling.
 
 ## [0.2.0] - 2026-06-09
 
