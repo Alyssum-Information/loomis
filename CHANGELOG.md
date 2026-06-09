@@ -6,6 +6,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **M3 daemon foundation**: `loomis serve` / `loomis up` now run the durable job
+  runner and the device watcher as background threads inside the API process, so a
+  single process is the only SQLite writer. An in-process event bus carries
+  `job.updated` / `device.connected` / `recording.added` events (the WebSocket that
+  relays them to the UI lands next). Opt-out via `[api].run_daemon` (off in tests).
+  The standalone `loomis worker` / `loomis backup` CLIs remain for headless use.
+
 ## [0.2.0] - 2026-06-09
 
 First tagged pre-alpha: the ingest spine (M1) plus local intelligence (M2) —

@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from . import db, repository
 from .config import Settings
+from .events import EventBus
 from .models import JobStatus, JobType, RecordingStatus
 from .pipeline import HANDLERS, Handler, JobContext
 
@@ -23,10 +24,24 @@ log = logging.getLogger(__name__)
 
 
 class JobRunner:
-    def __init__(self, settings: Settings, handlers: dict[JobType, Handler] | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        handlers: dict[JobType, Handler] | None = None,
+        *,
+        bus: EventBus | None = None,
+    ) -> None:
         self.settings = settings
         self.handlers: dict[JobType, Handler] = handlers if handlers is not None else HANDLERS
         self._types = tuple(self.handlers)
+        self._bus = bus
+
+    def _emit(self, job_id: int, job_type: JobType, status: str, attempts: int) -> None:
+        if self._bus is not None:
+            self._bus.publish(
+                "job.updated",
+                {"job_id": job_id, "type": job_type.value, "status": status, "attempts": attempts},
+            )
 
     def _execute_one(self, conn: sqlite3.Connection, worker_id: str) -> bool:
         """Claim and run a single job. Returns False when the queue has no runnable job."""
@@ -47,6 +62,7 @@ class JobRunner:
             handler(JobContext(conn, self.settings), job)
             repository.complete_job(conn, job_id)
             log.info("job %s (%s) done", job_id, job.type)
+            self._emit(job_id, job.type, JobStatus.DONE.value, job.attempts)
         except Exception as exc:  # noqa: BLE001 (a handler failure must not kill the worker)
             log.exception("job %s (%s) failed", job_id, job.type)
             status = repository.fail_job(
@@ -57,6 +73,7 @@ class JobRunner:
                 rec_id = job.payload.get("recording_id")
                 if isinstance(rec_id, str):
                     repository.set_recording_status(conn, rec_id, RecordingStatus.FAILED)
+            self._emit(job_id, job.type, status.value, job.attempts)
         return True
 
     def drain(self, conn: sqlite3.Connection) -> int:
