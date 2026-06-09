@@ -103,6 +103,30 @@ class SpeakerIdSettings(BaseModel):
     vector_backend: str = "memory"  # memory (brute-force cosine) | sqlite-vec (future, §8)
 
 
+class LlmSettings(BaseModel):
+    """LLM provider for summaries + classification (see ADR-0005). Local-first default.
+
+    Cloud providers are opt-in and send transcripts off-device (FR-7.8); their API
+    keys come from the environment only, never config (NFR-9).
+    """
+
+    provider: str = "ollama"  # ollama | null (null = offline stub, no network)
+    model: str = "llama3.1"
+    host: str = "http://127.0.0.1:11434"  # Ollama endpoint
+    timeout_s: float = 120.0
+    max_retries: int = 2  # structured-output validation retries before giving up
+
+
+class SummariesSettings(BaseModel):
+    """Diary/meeting classification + aggregation policy (see docs/features/05)."""
+
+    ambiguous_bias: str = "diary"  # tie-break: a stray meeting in the diary is cheaper
+    solo_dominance: float = 0.85  # owner duration fraction above which multi-speaker → diary
+    classify_confidence_floor: float = 0.6  # below this, ask the LLM to confirm
+    diary_day_settle_minutes: int = 30  # debounce window (not yet enforced; needs scheduler)
+    summary_language: str = "auto"  # auto = follow the transcript's dominant language
+
+
 class TranscodeSettings(BaseModel):
     """Opus transcode parameters (see docs/features/02, ADR-0008)."""
 
@@ -139,6 +163,8 @@ class Settings(BaseSettings):
     stt: SttSettings = Field(default_factory=SttSettings)
     diarize: DiarizeSettings = Field(default_factory=DiarizeSettings)
     speaker_id: SpeakerIdSettings = Field(default_factory=SpeakerIdSettings)
+    llm: LlmSettings = Field(default_factory=LlmSettings)
+    summaries: SummariesSettings = Field(default_factory=SummariesSettings)
     transcode: TranscodeSettings = Field(default_factory=TranscodeSettings)
     jobs: JobsSettings = Field(default_factory=JobsSettings)
 

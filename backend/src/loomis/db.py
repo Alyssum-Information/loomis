@@ -131,11 +131,65 @@ CREATE TABLE voiceprints (
 CREATE INDEX idx_voiceprints_speaker ON voiceprints (speaker_id);
 """
 
+# 005 — M2 summaries: per-recording diary/meeting classification, plus the daily
+# diary + standalone meeting records and their cross-links (05 §4.7–4.12, feature 05).
+_MIGRATION_005 = """
+ALTER TABLE recordings ADD COLUMN kind TEXT;   -- diary | meeting (set by classify)
+
+CREATE TABLE diary_entries (
+    id            TEXT PRIMARY KEY,                    -- UUID
+    date          TEXT NOT NULL UNIQUE,                -- local YYYY-MM-DD (one per day)
+    title         TEXT,
+    markdown_path TEXT,
+    metadata      TEXT NOT NULL DEFAULT '{}',          -- JSON: topics/mood/todos/...
+    model         TEXT,                                -- LLM provider:model used
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE diary_recordings (
+    diary_entry_id TEXT NOT NULL REFERENCES diary_entries(id) ON DELETE CASCADE,
+    recording_id   TEXT NOT NULL REFERENCES recordings(id),
+    PRIMARY KEY (diary_entry_id, recording_id)
+);
+
+CREATE TABLE meetings (
+    id            TEXT PRIMARY KEY,                    -- UUID
+    title         TEXT,
+    occurred_on   TEXT,                                -- local YYYY-MM-DD, for diary linking
+    markdown_path TEXT,
+    metadata      TEXT NOT NULL DEFAULT '{}',          -- JSON: decisions/action_items/...
+    model         TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_meetings_occurred ON meetings (occurred_on);
+
+CREATE TABLE meeting_recordings (
+    meeting_id   TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    recording_id TEXT NOT NULL REFERENCES recordings(id),
+    PRIMARY KEY (meeting_id, recording_id)
+);
+
+CREATE TABLE meeting_participants (
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    speaker_id INTEGER NOT NULL REFERENCES speakers(id),
+    role       TEXT,
+    PRIMARY KEY (meeting_id, speaker_id)
+);
+
+CREATE TABLE diary_meeting_links (
+    diary_entry_id TEXT NOT NULL REFERENCES diary_entries(id) ON DELETE CASCADE,
+    meeting_id     TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    PRIMARY KEY (diary_entry_id, meeting_id)
+);
+"""
+
 MIGRATIONS: Sequence[tuple[int, str]] = (
     (1, _MIGRATION_001),
     (2, _MIGRATION_002),
     (3, _MIGRATION_003),
     (4, _MIGRATION_004),
+    (5, _MIGRATION_005),
 )
 
 

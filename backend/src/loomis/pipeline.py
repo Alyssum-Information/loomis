@@ -18,11 +18,19 @@ from pathlib import Path
 from uuid import uuid4
 
 from . import repository
+from .classify import classify_segments
 from .config import Settings
 from .diarize import DiarTurn, get_diarize_engine
+from .llm import complete_structured, get_provider, model_id
 from .models import (
+    ClassifyResult,
+    DiaryDoc,
+    DiaryEntry,
     Job,
     JobType,
+    Meeting,
+    MeetingDoc,
+    RecordingKind,
     RecordingStatus,
     Segment,
     TranscodePolicy,
@@ -31,6 +39,14 @@ from .models import (
 from .speakerid import get_embedder, match
 from .sqlite_tx import transaction
 from .stt import get_engine
+from .summarize import (
+    build_classify_prompt,
+    build_diary_prompt,
+    build_meeting_prompt,
+    render_diary_markdown,
+    render_meeting_markdown,
+    transcript_text,
+)
 from .transcode import TranscodeError, Transcoder
 
 log = logging.getLogger(__name__)
@@ -178,7 +194,7 @@ def handle_speaker_id(ctx: JobContext, job: Job) -> None:
 
     Embeds each diarized speaker, matches against known voiceprints (assign / new
     provisional / uncertain), writes ``segments.speaker_id``, and grows the
-    voiceprint DB. Terminal until the summaries PR enqueues ``classify``.
+    voiceprint DB, then hands off to ``classify``.
     """
     conn = ctx.conn
     rec_id = _recording_id(job)
@@ -225,7 +241,150 @@ def handle_speaker_id(ctx: JobContext, job: Job) -> None:
                 for seg_id in seg_ids:
                     repository.set_segment_speaker(conn, seg_id, sid)
 
+        repository.enqueue_job(conn, JobType.CLASSIFY, {"recording_id": rec_id})
+
+
+def handle_classify(ctx: JobContext, job: Job) -> None:
+    """Decide diary vs meeting, then route to the right summarizer (FR-6.1).
+
+    Heuristics decide first; the LLM only confirms low-confidence cases when a real
+    provider is configured. Diary recordings settle the day's aggregate; meetings
+    get their own extraction (which then back-links into the day's diary).
+    """
+    conn = ctx.conn
+    rec_id = _recording_id(job)
+    rec = repository.get_recording(conn, rec_id)
+    if rec is None:
+        raise ValueError(f"recording {rec_id} not found")
+    repository.set_recording_status(conn, rec_id, RecordingStatus.PROCESSING)
+
+    segments = repository.get_segments_for_recording(conn, rec_id)
+    summaries = ctx.settings.summaries
+    result = classify_segments(segments, summaries)
+
+    unsure = result.confidence < summaries.classify_confidence_floor
+    if unsure and ctx.settings.llm.provider != "null":
+        provider = get_provider(ctx.settings.llm)
+        text = transcript_text(segments, repository.speaker_display_names(conn))
+        try:
+            result = complete_structured(
+                provider,
+                build_classify_prompt(text),
+                ClassifyResult,
+                max_retries=ctx.settings.llm.max_retries,
+            )
+        except Exception:  # noqa: BLE001 — LLM is best-effort; fall back to the heuristic
+            log.warning("classify LLM confirmation failed for %s; keeping heuristic", rec_id)
+
+    kind = RecordingKind(result.type)
+    date = repository.recording_local_date(conn, rec_id)
+    with transaction(conn):
+        repository.set_recording_kind(conn, rec_id, kind)
+        if kind == RecordingKind.MEETING:
+            repository.enqueue_job(conn, JobType.MEETING_EXTRACT, {"recording_id": rec_id})
+        else:
+            repository.set_recording_status(conn, rec_id, RecordingStatus.DONE)
+            if date:
+                repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
+
+
+def _write_sidecar(md_path: Path, markdown: str, payload: dict[str, object]) -> None:
+    """Write a Markdown file plus its ``.json`` metadata sidecar (05 §1)."""
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(markdown, encoding="utf-8")
+    md_path.with_suffix(".json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def handle_meeting_extract(ctx: JobContext, job: Job) -> None:
+    """Produce a standalone meeting record from a recording, then link it to the day (FR-6.3)."""
+    conn = ctx.conn
+    rec_id = _recording_id(job)
+    rec = repository.get_recording(conn, rec_id)
+    if rec is None:
+        raise ValueError(f"recording {rec_id} not found")
+    repository.set_recording_status(conn, rec_id, RecordingStatus.PROCESSING)
+
+    segments = repository.get_segments_for_recording(conn, rec_id)
+    text = transcript_text(segments, repository.speaker_display_names(conn))
+    provider = get_provider(ctx.settings.llm)
+    doc = complete_structured(
+        provider,
+        build_meeting_prompt(text, ctx.settings.summaries.summary_language),
+        MeetingDoc,
+        max_retries=ctx.settings.llm.max_retries,
+    )
+
+    date = repository.recording_local_date(conn, rec_id)
+    participant_ids = sorted({s.speaker_id for s in segments if s.speaker_id is not None})
+    meeting_id = uuid4().hex
+    md_path = ctx.data_dir / "meetings" / f"{meeting_id}.md"
+    _write_sidecar(md_path, render_meeting_markdown(doc), doc.model_dump())
+
+    meeting = Meeting(
+        id=meeting_id,
+        title=doc.title or None,
+        occurred_on=date,
+        markdown_path=str(md_path),
+        metadata=doc.model_dump(),
+        model=model_id(provider),
+    )
+    with transaction(conn):
+        repository.delete_meetings_for_recording(conn, rec_id)  # idempotent re-run
+        repository.insert_meeting(
+            conn, meeting, recording_ids=[rec_id], participant_ids=participant_ids
+        )
         repository.set_recording_status(conn, rec_id, RecordingStatus.DONE)
+        if date:
+            repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
+
+
+def handle_diary_aggregate(ctx: JobContext, job: Job) -> None:
+    """Write/refresh one local day's first-person diary entry + meeting links (FR-6.2, 6.6)."""
+    conn = ctx.conn
+    date = job.payload.get("date")
+    if not isinstance(date, str):
+        raise ValueError(f"diary_aggregate job {job.id} missing payload.date")
+
+    recordings = repository.diary_recordings_for_date(conn, date)
+    meetings = repository.meetings_for_date(conn, date)
+    if not recordings and not meetings:
+        return  # nothing settled for this day yet
+
+    provider = get_provider(ctx.settings.llm)
+    if recordings:
+        names = repository.speaker_display_names(conn)
+        chunks = [
+            transcript_text(repository.get_segments_for_recording(conn, r.id), names)
+            for r in recordings
+        ]
+        text = "\n\n".join(c for c in chunks if c)
+        doc = complete_structured(
+            provider,
+            build_diary_prompt(text, ctx.settings.summaries.summary_language),
+            DiaryDoc,
+            max_retries=ctx.settings.llm.max_retries,
+        )
+    else:
+        doc = DiaryDoc()  # a day with only meetings still gets an entry that links to them
+
+    meeting_links = [(m.title or "Meeting", f"../meetings/{m.id}.md") for m in meetings]
+    md_path = ctx.data_dir / "diary" / f"{date}.md"
+    _write_sidecar(md_path, render_diary_markdown(date, doc, meeting_links), doc.model_dump())
+
+    entry_id = uuid4().hex
+    entry = DiaryEntry(
+        id=entry_id,
+        date=date,
+        title=doc.title or None,
+        markdown_path=str(md_path),
+        metadata=doc.model_dump(),
+        model=model_id(provider),
+    )
+    with transaction(conn):
+        repository.replace_diary_entry(conn, entry, [r.id for r in recordings])
+        repository.link_diary_meetings(conn, entry_id, [m.id for m in meetings])
 
 
 HANDLERS: dict[JobType, Handler] = {
@@ -233,4 +392,7 @@ HANDLERS: dict[JobType, Handler] = {
     JobType.STT: handle_stt,
     JobType.DIARIZE: handle_diarize,
     JobType.SPEAKER_ID: handle_speaker_id,
+    JobType.CLASSIFY: handle_classify,
+    JobType.MEETING_EXTRACT: handle_meeting_extract,
+    JobType.DIARY_AGGREGATE: handle_diary_aggregate,
 }

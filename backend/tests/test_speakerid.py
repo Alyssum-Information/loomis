@@ -9,6 +9,7 @@ from loomis import db, repository
 from loomis.config import (
     CoreSettings,
     DiarizeSettings,
+    LlmSettings,
     Settings,
     SpeakerIdSettings,
     SttSettings,
@@ -85,6 +86,7 @@ def _settings(tmp_path: Path) -> Settings:
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),
+        llm=LlmSettings(provider="null"),
     )
 
 
@@ -128,7 +130,7 @@ def test_diarize_then_speaker_id_assigns_identity(tmp_path: Path) -> None:
     repository.enqueue_job(conn, JobType.DIARIZE, {"recording_id": "rec-1"})
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 2  # diarize → speaker_id
+    assert processed == 4  # diarize → speaker_id → classify → diary_aggregate
 
     segs = repository.get_segments_for_recording(conn, "rec-1")
     assert all(s.diarization_label == "SPEAKER_00" for s in segs)
