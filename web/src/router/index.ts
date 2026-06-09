@@ -1,20 +1,23 @@
 /**
- * router/index.ts
- *
- * Manual routes for ./src/pages/*.vue
+ * router/index.ts — manual routes for the read-only screens (M3 PR E).
  */
-
-// Composables
 import { createRouter, createWebHistory } from 'vue-router'
-import Index from '@/pages/index.vue'
+import Dashboard from '@/pages/index.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    { path: '/', name: 'dashboard', component: Dashboard },
+    { path: '/timeline', name: 'timeline', component: () => import('@/pages/Timeline.vue') },
     {
-      path: '/',
-      component: Index,
+      path: '/recordings/:id',
+      name: 'recording',
+      component: () => import('@/pages/Recording.vue'),
     },
+    { path: '/diary/:date', name: 'diary', component: () => import('@/pages/Diary.vue') },
+    { path: '/meetings/:id', name: 'meeting', component: () => import('@/pages/Meeting.vue') },
+    { path: '/search', name: 'search', component: () => import('@/pages/Search.vue') },
+    { path: '/jobs', name: 'jobs', component: () => import('@/pages/Jobs.vue') },
   ],
 })
 

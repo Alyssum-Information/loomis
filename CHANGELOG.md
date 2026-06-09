@@ -29,6 +29,11 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `POST /speakers/merge`, `POST /speakers/{id}/split`, `POST /diary/{date}/resummarize`,
   `POST /jobs/{id}/retry`. Speaker merge/split run as durable pipeline jobs
   (`speaker_merge` / `speaker_split`).
+- **M3 web UI — read screens** (FR-7.2, 7.3, 7.5, 7.6): the Vue 3 + Vuetify SPA gains
+  a navigation shell with a live-connection indicator and read-only screens —
+  Dashboard, Timeline, Recording detail (audio player with click-to-seek transcript),
+  Diary, Meeting, Search, and Jobs — over a typed API client and a WebSocket store
+  that refreshes views from `job.updated` / `recording.added` / `diary.updated` events.
 
 ## [0.2.0] - 2026-06-09
 
