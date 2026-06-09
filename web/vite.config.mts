@@ -52,6 +52,8 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,
+        // ws:true so the /api/v1/ws WebSocket upgrade is proxied too.
+        ws: true,
       },
     },
   },
