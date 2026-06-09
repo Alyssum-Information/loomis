@@ -79,12 +79,24 @@ class Prereq:
     required: bool
 
 
+def _module_installed(name: str) -> bool:
+    """True if an import would succeed, without importing the (heavy) module."""
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def check_prerequisites(*, need_frontend: bool) -> list[Prereq]:
-    """Verify tools. Optional deps (ffmpeg, Ollama) are informational."""
+    """Verify tools. Optional deps (ffmpeg, Ollama, STT/diarize models) are informational."""
     node = shutil.which("node")
     pnpm = shutil.which("pnpm")
     ffmpeg = shutil.which("ffmpeg")
     ollama = shutil.which("ollama")
+    whisperx = _module_installed("whisperx")
+    pyannote = _module_installed("pyannote.audio")
     return [
         Prereq("Python", True, sys.version.split()[0], required=True),
         Prereq(
@@ -100,9 +112,29 @@ def check_prerequisites(*, need_frontend: bool) -> list[Prereq]:
             required=need_frontend,
         ),
         Prereq(
-            "ffmpeg", ffmpeg is not None, ffmpeg or "optional — transcode/STT (M2+)", required=False
+            "ffmpeg",
+            ffmpeg is not None,
+            ffmpeg or "needed for STT/transcode — run ./install.sh",
+            required=False,
         ),
-        Prereq("Ollama", ollama is not None, ollama or "optional — local LLM (M4)", required=False),
+        Prereq(
+            "Ollama",
+            ollama is not None,
+            ollama or "needed for summaries — run ./install.sh",
+            required=False,
+        ),
+        Prereq(
+            "whisperx",
+            whisperx,
+            "transcription engine" if whisperx else "needed for STT — run ./install.sh",
+            required=False,
+        ),
+        Prereq(
+            "pyannote",
+            pyannote,
+            "diarization/voiceprints" if pyannote else "needed for speakers — run ./install.sh",
+            required=False,
+        ),
     ]
 
 

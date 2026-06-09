@@ -144,6 +144,27 @@ def test_failed_handler_parks_and_marks_recording_failed(tmp_path: Path) -> None
     assert rec["status"] == "failed"
 
 
+def test_permanent_error_parks_without_retrying(tmp_path: Path) -> None:
+    # A missing dependency / bad config is permanent: park on the first attempt with a
+    # clear message, instead of burning the full retry budget.
+    from loomis.errors import PermanentJobError
+    from loomis.models import JobType
+
+    settings = _settings(tmp_path)
+    conn = _conn(settings)
+    repository.enqueue_job(conn, JobType.STT, {"recording_id": "x"})
+
+    def boom(_ctx: object, _job: object) -> None:
+        raise PermanentJobError("whisperx is not installed — run ./install.sh")
+
+    JobRunner(settings, handlers={JobType.STT: boom}).drain(conn)
+
+    row = conn.execute("SELECT status, attempts, last_error FROM jobs").fetchone()
+    assert row["status"] == "parked"
+    assert row["attempts"] == 1  # not retried
+    assert "install.sh" in row["last_error"]
+
+
 class _ExplodingTranscoder:
     """Fails if asked to transcode — proves the idempotency guard skips re-transcode."""
 

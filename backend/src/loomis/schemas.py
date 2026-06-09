@@ -7,9 +7,11 @@ from ``models.py`` so the wire contract can evolve without touching storage type
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel
 
-from .models import Segment, Transcript
+from .models import RecordingKind, RecordingStatus, Segment, Transcript
 
 
 class Page[T](BaseModel):
@@ -37,6 +39,48 @@ class TranscriptDetail(BaseModel):
 
     transcript: Transcript
     segments: list[Segment]
+
+
+class StageState(StrEnum):
+    """State of one pipeline stage for a file (derived from its jobs)."""
+
+    PENDING = "pending"  # not started
+    ACTIVE = "active"  # queued or running
+    DONE = "done"
+    FAILED = "failed"  # a job in this stage failed/parked
+
+
+class PipelineStage(BaseModel):
+    """One stage of a file's pipeline; ``job_id`` is the retryable job when failed."""
+
+    state: StageState
+    job_id: int | None = None
+    error: str | None = None
+
+
+class RecordPipeline(BaseModel):
+    """A recording tracked through its processing stages: backup → STT → summary (FR-7.6).
+
+    The Records screen renders one of these per recording. ``backup`` reflects the
+    safety-spine import (no job); ``stt`` covers transcript readiness (transcode/stt);
+    ``summary`` folds the post-transcript work (diarize/speaker_id/classify/
+    diary_aggregate/meeting_extract).
+    """
+
+    recording_id: str
+    name: str  # display label — basename of the source file
+    device_id: str
+    device_name: str | None = None
+    kind: RecordingKind | None = None
+    status: RecordingStatus
+    recorded_at: str | None = None
+    imported_at: str | None = None
+    duration_s: float | None = None
+    size_bytes: int = 0
+    backup: PipelineStage
+    stt: PipelineStage
+    summary: PipelineStage
+    updated_at: str | None = None
 
 
 class PendingDevice(BaseModel):
@@ -80,3 +124,9 @@ class JobAccepted(BaseModel):
     """202 response for commands that enqueue background work (11 §1)."""
 
     job_id: int
+
+
+class RetryResult(BaseModel):
+    """How many failed/parked jobs were requeued by a bulk retry."""
+
+    requeued: int

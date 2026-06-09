@@ -205,6 +205,12 @@ INSERT INTO search_fts (ref_kind, ref_id, title, body)
     FROM meetings;
 """
 
+# 007 — opt-in registration: only registered devices auto-import (FR-1.9/1.10).
+# Existing rows default to 1 (they were registered under the old auto-register flow).
+_MIGRATION_007 = """
+ALTER TABLE devices ADD COLUMN registered INTEGER NOT NULL DEFAULT 1;
+"""
+
 MIGRATIONS: Sequence[tuple[int, str]] = (
     (1, _MIGRATION_001),
     (2, _MIGRATION_002),
@@ -212,13 +218,23 @@ MIGRATIONS: Sequence[tuple[int, str]] = (
     (4, _MIGRATION_004),
     (5, _MIGRATION_005),
     (6, _MIGRATION_006),
+    (7, _MIGRATION_007),
 )
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    """Open (creating parents) a SQLite connection in WAL mode with FKs on."""
+    """Open (creating parents) a SQLite connection in WAL mode with FKs on.
+
+    ``check_same_thread=False``: a per-request connection is created, used, and
+    closed across different threadpool worker threads (FastAPI runs sync dependency
+    setup and teardown on potentially different threads). We never share a single
+    connection between threads *concurrently* — each connection belongs to one
+    request or one daemon worker — so disabling the guard is safe here.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, isolation_level=None)  # autocommit; we manage txns
+    conn = sqlite3.connect(  # autocommit; we manage txns
+        db_path, isolation_level=None, check_same_thread=False
+    )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")

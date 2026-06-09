@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import PurePosixPath
 from typing import TypedDict
 
 from .models import (
@@ -27,6 +28,7 @@ from .models import (
     Speaker,
     Transcript,
 )
+from .schemas import PipelineStage, RecordPipeline, StageState
 from .speakerid import Vector, blob_to_vec, centroid, vec_to_blob
 
 
@@ -64,8 +66,8 @@ def insert_device(conn: sqlite3.Connection, device: Device) -> None:
         """
         INSERT INTO devices
             (id, name, volume_serial, owner_speaker_id, audio_globs, auto_delete,
-             transcode_policy, transcode_opts, min_free_bytes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             transcode_policy, transcode_opts, min_free_bytes, registered)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             device.id,
@@ -77,8 +79,14 @@ def insert_device(conn: sqlite3.Connection, device: Device) -> None:
             device.transcode_policy.value,
             json.dumps(device.transcode_opts),
             device.min_free_bytes,
+            int(device.registered),
         ),
     )
+
+
+def set_device_registered(conn: sqlite3.Connection, device_id: str, registered: bool) -> None:
+    """Activate/deactivate a device's registration (FR-1.9/1.10)."""
+    conn.execute("UPDATE devices SET registered = ? WHERE id = ?", (int(registered), device_id))
 
 
 def touch_device(conn: sqlite3.Connection, device_id: str) -> None:
@@ -752,6 +760,15 @@ def requeue_job(conn: sqlite3.Connection, job_id: int) -> bool:
     return cur.rowcount > 0
 
 
+def requeue_failed_jobs(conn: sqlite3.Connection) -> int:
+    """Requeue every failed/parked job (FR-7.6). Returns how many were requeued."""
+    cur = conn.execute(
+        "UPDATE jobs SET status = 'queued', attempts = 0, last_error = NULL, worker_id = NULL, "
+        "updated_at = datetime('now') WHERE status IN ('failed', 'parked')"
+    )
+    return int(cur.rowcount)
+
+
 def list_jobs(conn: sqlite3.Connection, *, status: str | None = None, limit: int) -> list[Job]:
     if status:
         rows = conn.execute(
@@ -760,6 +777,112 @@ def list_jobs(conn: sqlite3.Connection, *, status: str | None = None, limit: int
     else:
         rows = conn.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     return [Job.from_row(r) for r in rows]
+
+
+# Pipeline stages, as job-type buckets, for the record-centric Records view (FR-7.6).
+# STT covers transcript readiness only (transcode + stt) so the stage turns green as
+# soon as the transcript is viewable. Speaker labeling (diarize, speaker_id) runs after
+# the transcript on the way to the summary, so it sits in the summary bucket — its
+# failures still surface, without holding back the STT stage.
+_STT_JOB_TYPES = frozenset({JobType.TRANSCODE, JobType.STT})
+_SUMMARY_JOB_TYPES = frozenset(
+    {
+        JobType.DIARIZE,
+        JobType.SPEAKER_ID,
+        JobType.CLASSIFY,
+        JobType.DIARY_AGGREGATE,
+        JobType.MEETING_EXTRACT,
+    }
+)
+
+
+def _reduce_stage(jobs: list[Job]) -> PipelineStage:
+    """Collapse a bucket of a recording's jobs into a single stage state.
+
+    failed/parked wins (it blocks the file and is what the user retries); a job actually
+    ``running`` is ``active`` (blue); all-done is ``done`` (green); anything else — an
+    empty bucket, or jobs merely ``queued`` and waiting — is ``pending`` (grey).
+    """
+    if not jobs:
+        return PipelineStage(state=StageState.PENDING)
+    blocking = next(
+        (j for j in jobs if j.status in (JobStatus.FAILED, JobStatus.PARKED)), None
+    )
+    if blocking is not None:
+        return PipelineStage(
+            state=StageState.FAILED, job_id=blocking.id, error=blocking.last_error
+        )
+    if any(j.status == JobStatus.RUNNING for j in jobs):
+        return PipelineStage(state=StageState.ACTIVE)
+    if all(j.status == JobStatus.DONE for j in jobs):
+        return PipelineStage(state=StageState.DONE)
+    return PipelineStage(state=StageState.PENDING)  # queued / waiting
+
+
+def pipeline_rows(
+    conn: sqlite3.Connection, *, limit: int, offset: int
+) -> tuple[list[RecordPipeline], bool]:
+    """One :class:`RecordPipeline` per recording (newest-first page) for the Records view.
+
+    Pages recordings, then pulls every job that references one of them via
+    ``payload.recording_id`` and buckets them into the STT / summary stages.
+    """
+    recs, has_more = list_recordings(conn, limit=limit, offset=offset)
+    if not recs:
+        return [], has_more
+
+    ids = [r.id for r in recs]
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT * FROM jobs WHERE json_extract(payload, '$.recording_id') IN ({placeholders})"  # noqa: S608 (placeholders only)
+        " ORDER BY id",
+        ids,
+    ).fetchall()
+    jobs_by_rec: dict[str, list[Job]] = {}
+    for row in rows:
+        job = Job.from_row(row)
+        rec_id = job.payload.get("recording_id")
+        if isinstance(rec_id, str):
+            jobs_by_rec.setdefault(rec_id, []).append(job)
+
+    device_names = {d.id: d.name for d in list_devices(conn)}
+
+    out: list[RecordPipeline] = []
+    for rec in recs:
+        jobs = jobs_by_rec.get(rec.id, [])
+        stt_jobs = [j for j in jobs if j.type in _STT_JOB_TYPES]
+        summary_jobs = [j for j in jobs if j.type in _SUMMARY_JOB_TYPES]
+        backup = PipelineStage(
+            state=StageState.FAILED
+            if rec.status == RecordingStatus.QUARANTINED
+            else StageState.DONE
+        )
+        # A finished recording has every stage done even if its job rows were pruned.
+        done = rec.status == RecordingStatus.DONE
+        stt = PipelineStage(state=StageState.DONE) if done else _reduce_stage(stt_jobs)
+        summary = PipelineStage(state=StageState.DONE) if done else _reduce_stage(summary_jobs)
+        updates = [j.updated_at for j in jobs if j.updated_at] + (
+            [rec.imported_at] if rec.imported_at else []
+        )
+        out.append(
+            RecordPipeline(
+                recording_id=rec.id,
+                name=PurePosixPath(rec.source_path.replace("\\", "/")).name or rec.id,
+                device_id=rec.device_id,
+                device_name=device_names.get(rec.device_id),
+                kind=rec.kind,
+                status=rec.status,
+                recorded_at=rec.recorded_at,
+                imported_at=rec.imported_at,
+                duration_s=rec.duration_s,
+                size_bytes=rec.size_bytes,
+                backup=backup,
+                stt=stt,
+                summary=summary,
+                updated_at=max(updates) if updates else rec.imported_at,
+            )
+        )
+    return out, has_more
 
 
 def timeline(

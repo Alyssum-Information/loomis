@@ -30,7 +30,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import backup, db, repository
 from .config import Settings
-from .devicefile import device_file_path
 from .events import EventBus
 from .models import Device, DiaryEntry, Job, JobType, Meeting, Recording, Speaker
 from .schemas import (
@@ -39,6 +38,8 @@ from .schemas import (
     JobAccepted,
     Page,
     PendingDevice,
+    RecordPipeline,
+    RetryResult,
     SearchHit,
     SpeakerMerge,
     SpeakerSplit,
@@ -93,14 +94,11 @@ def list_devices(conn: Conn) -> list[Device]:
 
 @router.get("/devices/pending", response_model=list[PendingDevice])
 def pending_devices(conn: Conn) -> list[PendingDevice]:
-    """Connected removable volumes with no registration yet (the new-device prompt)."""
+    """Connected volumes that are not actively registered (the new-device prompt, FR-1.9)."""
     pending: list[PendingDevice] = []
     for vol in sorted(removable_volumes()):
-        serial = vol.name or str(vol)
-        known = device_file_path(vol).exists() or (
-            repository.find_device_by_serial(conn, serial) is not None
-        )
-        if not known:
+        device = backup.resolve_device(conn, vol)
+        if device is None or not device.registered:
             pending.append(PendingDevice(volume=str(vol)))
     return pending
 
@@ -212,6 +210,14 @@ def list_jobs(conn: Conn, status: str | None = None, limit: Limit = 100) -> list
     return repository.list_jobs(conn, status=status, limit=limit)
 
 
+@router.get("/pipeline", response_model=Page[RecordPipeline])
+def list_pipeline(conn: Conn, limit: Limit = 50, cursor: str | None = None) -> Page[RecordPipeline]:
+    """Record-centric processing view (FR-7.6): one row per recording, newest first."""
+    offset = _offset(cursor)
+    items, has_more = repository.pipeline_rows(conn, limit=limit, offset=offset)
+    return Page(items=items, next_cursor=_next_cursor(offset, limit, has_more=has_more))
+
+
 # --- commands: quick writes return the resource; heavy work returns 202 + job_id ---
 
 
@@ -221,9 +227,16 @@ def register_device(body: DeviceRegister, conn: Conn, settings: AppSettings) -> 
     volume = Path(body.volume)
     if not volume.exists():
         raise HTTPException(status_code=404, detail="volume not found")
-    return backup.register_or_load_device(
+    return backup.register_device(
         conn, volume, settings, name=body.name, auto_delete=body.auto_delete
     )
+
+
+@router.delete("/devices/{device_id}", status_code=204)
+def unregister_device(device_id: str, conn: Conn) -> None:
+    """Unregister a device (FR-1.10): deactivate + remove device.json; recordings kept."""
+    if not backup.unregister_device(conn, device_id):
+        raise HTTPException(status_code=404, detail="device not found")
 
 
 @router.patch("/devices/{device_id}", response_model=Device)
@@ -286,6 +299,12 @@ def retry_job(job_id: int, conn: Conn) -> JobAccepted:
     if not repository.requeue_job(conn, job_id):
         raise HTTPException(status_code=404, detail="job not found or not retryable")
     return JobAccepted(job_id=job_id)
+
+
+@router.post("/jobs/retry-all", response_model=RetryResult, status_code=202)
+def retry_all_jobs(conn: Conn) -> RetryResult:
+    """Requeue every failed/parked job at once (FR-7.6)."""
+    return RetryResult(requeued=repository.requeue_failed_jobs(conn))
 
 
 @router.websocket("/ws")

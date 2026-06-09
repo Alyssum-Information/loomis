@@ -56,11 +56,17 @@ application = "voip"
 ffmpeg_path = "ffmpeg"
 
 [stt]
-engine = "whisperx"             # whisperx | null  (null = offline/dev stub, no GPU deps)
+engine = "whisperx"             # whisperx (default) | null  (null = offline stub, no transcript)
 model = "large-v3"
 device = "auto"                 # auto | cuda | cpu
 compute_type = "auto"
 language = "auto"               # auto-detect; or force e.g. "zh"
+# whisperx needs ffmpeg on PATH to read audio. ffmpeg + whisperx are installed by
+# the repo-root install script (./install.ps1 / ./install.sh) — they are baseline,
+# not optional. Use engine = "null" only to run the pipeline without transcription.
+# device = "auto" uses an NVIDIA GPU when present. The default install ships CUDA
+# PyTorch (the installer's `gpu` extra); pass -Cpu / --cpu for the CPU-only build.
+# On CPU-only machines, use model = "small" or "medium" for a usable speed.
 
 [jobs]                          # durable pipeline job runner (04 §7)
 concurrency = 1                 # GPU-heavy steps serialize by default
@@ -69,28 +75,39 @@ max_attempts = 3                # attempts beyond this park the job (dead-letter
 lease_seconds = 1800           # reclaim a 'running' job idle longer than this; must
                                 # exceed the slowest step (no heartbeat yet)
 
-[diarization]
-provider = "pyannote"
-min_speakers = 1
-max_speakers = 0                # 0 = auto
+[diarize]
+engine = "pyannote"             # pyannote (default) | null
+model = "pyannote/speaker-diarization-3.1"
+device = "auto"                 # auto | cuda | cpu
+min_speakers = 0                # 0 / unset = auto
+max_speakers = 0
+# pyannote's model is GATED: create a free HuggingFace token, accept the terms at
+# https://huggingface.co/pyannote/speaker-diarization-3.1, then set it here (or via
+# LOOMIS_DIARIZE__HF_TOKEN). Without it the diarize step parks.
+hf_token = ""
 
 [speaker_id]
-match_threshold = 0.65
+engine = "pyannote"             # pyannote (default) | null
+match_threshold = 0.70
 margin = 0.10
-new_identity_below = 0.45
+new_identity_below = 0.55
 vector_backend = "memory"       # memory | sqlite-vec
 
 [llm]
-provider = "ollama"             # ollama (default) | openai | anthropic | gemini
-model = "llama3.1:8b"
-ollama_host = "http://127.0.0.1:11434"
-# Cloud API keys come from env, never stored here, never logged:
-#   LOOMIS_LLM__API_KEY=...
-summary_language = "auto"
+provider = "ollama"             # ollama (default) | null  (cloud providers: future, opt-in)
+model = "qwen2.5:7b"            # pulled by the install script; `ollama pull <model>` for others
+host = "http://127.0.0.1:11434"
+timeout_s = 120.0
+max_retries = 2
+# Ollama (+ this model) is baseline — the install script sets it up. Cloud API keys
+# (future) come from env, never stored here or logged:  LOOMIS_LLM__API_KEY=...
 
 [summaries]
 diary_day_settle_minutes = 30
 ambiguous_bias = "diary"
+solo_dominance = 0.85
+classify_confidence_floor = 0.6
+summary_language = "auto"
 
 [cloud]
 enabled = false                 # opt-in; nothing leaves the machine until true

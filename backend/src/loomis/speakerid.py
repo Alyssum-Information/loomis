@@ -23,10 +23,15 @@ from typing import Protocol
 
 from .config import SpeakerIdSettings
 from .diarize import DiarTurn
+from .errors import PermanentJobError
 
 Vector = tuple[float, ...]
 
 _NULL_DIM = 32
+_SAMPLE_RATE = 16000  # whisperx.load_audio decodes to mono float32 at this rate
+_EMBED_HINT = (
+    "speaker embedding deps are not installed — run ./install.sh (or `uv sync --extra diarize`)"
+)
 
 
 # --- serialization + vector math (stdlib only) ---
@@ -110,7 +115,7 @@ class PyannoteEmbedder:
         if self._device != "auto":
             return self._device
         try:
-            import torch  # type: ignore[import-not-found]  # noqa: PLC0415
+            import torch  # noqa: PLC0415
 
             return "cuda" if torch.cuda.is_available() else "cpu"
         except Exception:
@@ -118,29 +123,53 @@ class PyannoteEmbedder:
 
     def _load(self) -> object:
         if self._inference is None:
-            import torch  # noqa: PLC0415
-            from pyannote.audio import (  # type: ignore[import-not-found]  # noqa: PLC0415
-                Inference,
-                Model,
-            )
+            try:
+                import torch  # noqa: PLC0415
+                from pyannote.audio import (  # noqa: PLC0415
+                    Inference,
+                    Model,
+                )
+            except ImportError as exc:
+                raise PermanentJobError(_EMBED_HINT) from exc
 
             model = Model.from_pretrained(self.model)
+            if model is None:
+                raise PermanentJobError(f"could not load embedding model {self.model!r}")
             self._inference = Inference(
                 model, window="whole", device=torch.device(self._resolve_device())
             )
         return self._inference
 
+    def _load_in_memory(self, audio: Path) -> dict[str, object]:
+        """Decode the file to an in-memory waveform for pyannote.
+
+        pyannote's file-path crop decodes via torchcodec, whose Windows DLLs are often
+        broken; passing a ``{"waveform", "sample_rate"}`` dict makes it skip that path
+        entirely. We reuse whisperx's ffmpeg-CLI decoder (mono float32 @ 16 kHz) — the
+        same one STT and diarization already rely on.
+        """
+        import torch  # noqa: PLC0415
+
+        try:
+            import whisperx  # noqa: PLC0415
+        except ImportError as exc:
+            raise PermanentJobError(_EMBED_HINT) from exc
+        wav = whisperx.load_audio(str(audio))  # np.float32, mono, 16 kHz
+        waveform = torch.from_numpy(wav).unsqueeze(0)  # (channel=1, time)
+        return {"waveform": waveform, "sample_rate": _SAMPLE_RATE}
+
     def embed(self, audio: Path, turns: list[DiarTurn]) -> dict[str, Vector]:
-        from pyannote.core import Segment  # type: ignore[import-not-found]  # noqa: PLC0415
+        from pyannote.core import Segment  # noqa: PLC0415
 
         inference = self._load()
+        file = self._load_in_memory(audio)
         # Aggregate per label: average the embeddings of that speaker's turns.
         per_label: dict[str, list[Vector]] = {}
         for turn in turns:
             if not math.isfinite(turn.end) or turn.end <= turn.start:
                 continue
             crop = Segment(turn.start, turn.end)
-            raw = inference.crop(str(audio), crop)  # type: ignore[attr-defined]
+            raw = inference.crop(file, crop)  # type: ignore[attr-defined]
             vec = tuple(float(x) for x in raw)
             per_label.setdefault(turn.label, []).append(l2_normalize(vec))
         return {label: centroid(vecs) for label, vecs in per_label.items() if vecs}
@@ -152,7 +181,7 @@ def get_embedder(settings: SpeakerIdSettings) -> SpeakerEmbedder:
         return NullEmbedder()
     if settings.engine == "pyannote":
         return PyannoteEmbedder(settings)
-    raise ValueError(f"unknown speaker_id engine: {settings.engine!r}")
+    raise PermanentJobError(f"unknown speaker_id engine: {settings.engine!r}")
 
 
 # --- matching (FR-5.3, FR-5.4) ---

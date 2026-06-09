@@ -28,36 +28,63 @@ Speakers, summaries, and the full UI follow per the
 
 ## Getting started
 
-### Prerequisites
+Three steps: **install**, set up the **diarization model**, then **run**.
 
-- **Python 3.12+** and [uv](https://github.com/astral-sh/uv) — backend.
-- **Node 18+** and [pnpm](https://pnpm.io) — frontend.
-- Optional, added in later milestones: **ffmpeg** (transcode), a running
-  **[Ollama](https://ollama.com)** (local LLM), **rclone** (cloud sync). Run
-  `uv run loomis check` to see what's detected.
+### 1. Install
 
-### Install
+From the repo root, run the installer for your OS:
 
+```powershell
+./install.ps1          # Windows (PowerShell)
+```
 ```bash
-git clone https://github.com/kevin/loomis
-cd loomis
-
-# Backend (Python)
-cd backend && uv sync          # create venv + install from the lockfile
-
-# Frontend (web)
-cd ../web && pnpm install      # one-time: install SPA deps
+./install.sh           # macOS / Linux
 ```
 
-### Run
+It installs the full baseline — [uv](https://github.com/astral-sh/uv), Node + pnpm,
+**ffmpeg**, **[Ollama](https://ollama.com)** (and pulls the default model), the
+backend STT / diarization / LLM extras, and the web dependencies. Add
+`-SkipLlmModel` / `--skip-llm-model` to skip the large model download.
 
-From `backend/`, the one-click launcher starts the API and the Vite dev server
-together, streams both logs, waits for health, and opens a browser:
+> **GPU (NVIDIA):** the installer defaults to the **CUDA** build of PyTorch — the
+> `gpu` extra pins torch to the CUDA (cu128) wheels in the lockfile, so the build is
+> recorded once and every later `uv run` keeps it (no env var, no new shell needed).
+> STT/diarize use `device = "auto"`, so they pick up the GPU automatically. On a
+> machine without an NVIDIA GPU, install with `-Cpu` / `--cpu` for the smaller
+> CPU-only wheels, and set `[stt].model = "small"` (or `medium`) for usable speed.
+
+> Installing by hand instead: `cd backend && uv sync --extra stt --extra diarize
+> --extra llm --extra gpu` (use `--extra cpu` for the CPU-only build), then
+> `cd ../web && pnpm install`, with ffmpeg + Ollama on your PATH.
+
+### 2. Diarization model (one-time)
+
+Speaker diarization uses [pyannote](https://github.com/pyannote/pyannote-audio),
+whose models download from HuggingFace with a free token. Do this once:
+
+1. Get a **read** token: <https://huggingface.co/settings/tokens>
+2. Open these two pages and click **Agree** to the terms:
+   [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+   · [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+3. Add the token to `~/.loomis/config.toml`:
+   ```toml
+   [diarize]
+   hf_token = "hf_xxxxxxxx"
+   ```
+   (or set `LOOMIS_DIARIZE__HF_TOKEN` in the environment.)
+
+Skipping this is fine to start — **transcription, diary, and meetings still work**;
+only speaker separation and cross-recording identity wait. Add the token later and
+press **Retry all** on the Jobs screen. To drop speakers entirely, set
+`[diarize].engine` and `[speaker_id].engine` to `"null"`.
+
+### 3. Run
 
 ```bash
 cd backend
-uv run loomis                  # = `loomis up`; Ctrl-C stops both, leaves Ollama etc. running
-uv run loomis up --prod        # build the SPA and serve it from the backend (no Vite)
+uv run loomis            # backend + web together, one terminal; Ctrl-C stops both
+uv run loomis up --prod  # build the SPA and serve it from the backend (no Vite)
+uv run loomis check      # report what's installed/detected
 ```
 
 The app opens at <http://localhost:3000> (dev) or <http://127.0.0.1:8080>

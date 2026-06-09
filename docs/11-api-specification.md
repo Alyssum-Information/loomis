@@ -48,9 +48,10 @@ a typed client.
 |--------|------|---------|--------|
 | GET | `/devices` | list registered devices + `last_seen` | FR-1.5/1.8 |
 | GET | `/devices/{id}` | device detail | — |
-| POST | `/devices/register` | register a newly-detected volume (name, owner hint, policies) | FR-1.3/1.4 |
+| POST | `/devices/register` | register (or re-activate) a connected volume (name, owner hint, policies) — explicit, user-initiated | FR-1.3/1.4 |
+| DELETE | `/devices/{id}` | unregister: remove `device.json` (when reachable) + deactivate; recordings retained | FR-1.10 |
 | PATCH | `/devices/{id}` | edit device settings | FR-1.7 |
-| GET | `/devices/pending` | volumes connected but unregistered (for the prompt) | FR-1.2 |
+| GET | `/devices/pending` | connected volumes that are **not registered** (drives the prompt); only registered devices auto-import | FR-1.2/1.9 |
 
 ### 3.2 Recordings & transcripts
 | Method | Path | Purpose |
@@ -81,8 +82,10 @@ a typed client.
 | Method | Path | Purpose | Traces |
 |--------|------|---------|--------|
 | GET | `/search?q=` | full-text across transcripts/diary/meetings | FR-7.5 |
-| GET | `/jobs` | queued/running/failed steps | FR-7.6 |
+| GET | `/pipeline` | record-centric view: one row per recording with backup/STT/summary stage states (cursor-paged) | FR-7.6 |
+| GET | `/jobs` | queued/running/failed steps (raw) | FR-7.6 |
 | POST | `/jobs/{id}/retry` | retry a failed step | FR-7.6 |
+| POST | `/jobs/retry-all` | requeue every failed/parked step | FR-7.6 |
 | GET | `/settings` / PATCH `/settings` | read/update config (egress-flagged) | FR-7.7/7.8 |
 | GET | `/cloud/remotes` | configured rclone remotes | FR-8.2 |
 | POST | `/cloud/sync` | trigger a sync (→ job) | FR-8.3 |

@@ -7,6 +7,59 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Record-centric pipeline view** (FR-7.6): new `GET /api/v1/pipeline` returns one row
+  per recording with its stage states — **備份 backup** (the safety-spine import),
+  **語音轉文字 STT** (transcript readiness: transcode/stt), and **摘要 summary** (the
+  post-transcript work: diarize/speaker_id/classify/diary_aggregate/meeting_extract).
+  A stage is `done` (green) when complete, `active` (blue) only while a job is actually
+  running, `failed` when a job parked, else `pending` (grey — not started or queued).
+  The failed stage exposes its retryable `job_id`. The web
+  **Jobs** screen is replaced by a per-recording **Records** screen (`/records`) showing
+  a backup → STT → summary progress per recording (was a raw per-job table).
+- **`install.sh` / `install.ps1`** at the repo root: one command installs **all
+  baseline requirements** for the full pipeline — uv, Node + pnpm, ffmpeg, Ollama
+  (+ the default model), and the backend STT/diarize/LLM extras + web deps — so
+  `uv run loomis up` works without manual setup. ffmpeg and the WhisperX/pyannote/
+  Ollama backends are baseline, not optional; only *alternative* backends are.
+  (`--skip-llm-model` / `-SkipLlmModel` skips the large Ollama pull. Diarization
+  still needs a one-time HuggingFace token for pyannote's gated model — see README.)
+- **Bulk job retry**: `POST /api/v1/jobs/retry-all` requeues every failed/parked job;
+  the Jobs screen gains a **Retry all** button.
+- `loomis check` now reports whether the optional `whisperx` / `pyannote` Python
+  modules are importable.
+
+### Fixed
+- **speaker_id no longer needs torchcodec**: the pyannote embedder now decodes audio
+  with whisperx's ffmpeg CLI and hands pyannote an in-memory `{waveform, sample_rate}`
+  dict instead of a file path. File-path decoding routed through torchcodec, whose
+  Windows DLLs frequently fail to load (mismatched ffmpeg shared libs) — parking the
+  `speaker_id` step. STT and diarization already used the in-memory path. The harmless
+  torchcodec import warning is also muted.
+
+### Changed
+- **GPU PyTorch by default**: the installer now installs the **CUDA** torch build.
+  New mutually-exclusive `gpu` / `cpu` extras pin torch/torchaudio to the PyTorch
+  CUDA (cu128) or CPU wheel index in the universal lockfile (`[tool.uv.sources]` +
+  `[tool.uv].conflicts`), so `uv sync --extra gpu` records the CUDA build once and
+  later `uv run` keeps it — no `UV_TORCH_BACKEND` env var or post-sync overlay.
+  `install.ps1` / `install.sh` select `gpu` by default, `-Cpu` / `--cpu` for the
+  smaller CPU-only wheels. whisperx stays at its current version (torch 2.8 cu128
+  wheels satisfy it).
+- **Permanent failures park immediately**: a missing optional dependency (e.g.
+  `whisperx`) or a bad engine/provider name now parks the job on the first attempt
+  with an actionable message (run `./install.sh`) instead of burning the full retry
+  budget. Engine/provider construction raises a typed `PermanentJobError`.
+- **Opt-in device registration** (FR-1.3, 1.9, 1.10): the daemon no longer
+  auto-registers or imports every connected volume. It imports **only registered
+  devices**; an unregistered volume raises a prompt (`device.connected` with
+  `registered:false`) and nothing is written to it. Registration is an explicit
+  user action — `POST /devices/register` (Devices screen) writes `device.json` and
+  activates the row. New `DELETE /devices/{id}` unregisters a device (removes
+  `device.json` when reachable, deactivates the row; recordings are retained).
+  Schema migration 007 adds `devices.registered`. The standalone `loomis backup`
+  CLI still registers the volume you explicitly target.
+
+### Added
 - **M3 daemon foundation**: `loomis serve` / `loomis up` now run the durable job
   runner and the device watcher as background threads inside the API process, so a
   single process is the only SQLite writer. An in-process event bus carries
@@ -34,6 +87,10 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Dashboard, Timeline, Recording detail (audio player with click-to-seek transcript),
   Diary, Meeting, Search, and Jobs — over a typed API client and a WebSocket store
   that refreshes views from `job.updated` / `recording.added` / `diary.updated` events.
+- **M3 web UI — management screens** (FR-1.3, 1.7, 5.5, 7.6): a Speakers screen
+  (rename, confirm, merge, split), a Devices screen (register pending volumes, edit
+  per-device settings) with a new-device prompt driven by `device.connected`, and a
+  Retry action on the Jobs screen — completing the browsable-product milestone (M3).
 
 ## [0.2.0] - 2026-06-09
 

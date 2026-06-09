@@ -10,11 +10,29 @@ the full pipeline without a model or GPU.
 from __future__ import annotations
 
 import math
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .config import DiarizeSettings
+from .errors import PermanentJobError
+
+_DIARIZE_HINT = (
+    "diarization deps are not installed — run ./install.sh "
+    "(or `uv sync --extra stt --extra diarize --extra gpu`)"
+)
+_FFMPEG_HINT = "ffmpeg not found on PATH — install ffmpeg (whisperx needs it to read audio)"
+
+
+def _import_whisperx() -> Any:
+    try:
+        import whisperx  # noqa: PLC0415
+    except ImportError as exc:
+        raise PermanentJobError(_DIARIZE_HINT) from exc
+    if shutil.which("ffmpeg") is None:
+        raise PermanentJobError(_FFMPEG_HINT)
+    return whisperx
 
 
 @dataclass(slots=True)
@@ -64,7 +82,7 @@ class PyannoteEngine:
         if self._device != "auto":
             return self._device
         try:
-            import torch  # type: ignore[import-not-found]  # noqa: PLC0415
+            import torch  # noqa: PLC0415
 
             return "cuda" if torch.cuda.is_available() else "cpu"
         except Exception:
@@ -72,8 +90,7 @@ class PyannoteEngine:
 
     def _load(self) -> object:
         if self._pipeline is None:
-            import whisperx  # type: ignore[import-not-found]  # noqa: PLC0415
-
+            whisperx = _import_whisperx()
             self._pipeline = whisperx.DiarizationPipeline(
                 model_name=self.model, use_auth_token=self._token, device=self._resolve_device()
             )
@@ -82,8 +99,7 @@ class PyannoteEngine:
     def diarize(
         self, audio: Path, *, min_speakers: int | None, max_speakers: int | None
     ) -> DiarResult:
-        import whisperx  # noqa: PLC0415
-
+        whisperx = _import_whisperx()
         pipeline = self._load()
         loaded = whisperx.load_audio(str(audio))
         df = pipeline(loaded, min_speakers=min_speakers, max_speakers=max_speakers)  # type: ignore[operator]
@@ -100,4 +116,4 @@ def get_diarize_engine(settings: DiarizeSettings) -> DiarizeEngine:
         return NullDiarizeEngine()
     if settings.engine == "pyannote":
         return PyannoteEngine(settings)
-    raise ValueError(f"unknown diarize engine: {settings.engine!r}")
+    raise PermanentJobError(f"unknown diarize engine: {settings.engine!r}")

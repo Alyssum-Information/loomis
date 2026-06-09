@@ -114,7 +114,9 @@ class LlmSettings(BaseModel):
     """
 
     provider: str = "ollama"  # ollama | null (null = offline stub, no network)
-    model: str = "llama3.1"
+    # qwen2.5:7b: strong, recent, runs on a typical consumer PC, and notably good at
+    # Chinese/multilingual — a fit for Loomis's Mandarin-first transcripts.
+    model: str = "qwen2.5:7b"
     host: str = "http://127.0.0.1:11434"  # Ollama endpoint
     timeout_s: float = 120.0
     max_retries: int = 2  # structured-output validation retries before giving up

@@ -11,8 +11,14 @@ daemon, and the **FastAPI** REST/WebSocket API the Vue SPA (`../web/`) consumes.
 
 ## Develop
 
+First-time setup: run the repo-root installer (`../install.ps1` / `../install.sh`)
+to get ffmpeg, Ollama, the STT/diarize/LLM extras, and the web deps in one shot.
+`uv sync` below installs only the lean base (null engines).
+
 ```bash
-uv sync                 # create venv + install (uses Python 3.12)
+uv sync                 # create venv + install base (uses Python 3.12)
+uv sync --extra stt --extra diarize --extra llm --extra gpu  # full pipeline, CUDA torch
+uv sync --extra stt --extra diarize --extra llm --extra cpu  # same, CPU-only torch
 uv run loomis            # one-click dev: backend + Vite frontend, one terminal
 uv run loomis up --prod  # build the SPA and serve it from the backend (no Vite)
 uv run loomis check      # report prerequisite tools (Node, pnpm, ffmpeg, Ollama)

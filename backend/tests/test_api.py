@@ -174,3 +174,17 @@ def test_jobs_endpoint(client: TestClient) -> None:
     resp = client.get("/api/v1/jobs")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+def test_pipeline_endpoint(client: TestClient) -> None:
+    page = client.get("/api/v1/pipeline").json()
+    rows = {r["recording_id"]: r for r in page["items"]}
+    # rec-1 is done → every stage done; rec-2 imported → backup done, rest pending.
+    assert rows["rec-1"]["name"] == "rec-1.wav"
+    assert rows["rec-1"]["device_name"] == "Recorder"
+    assert rows["rec-1"]["recorded_at"] == "2026-06-09T10:00:00+08:00"
+    assert rows["rec-1"]["size_bytes"] > 0
+    assert rows["rec-1"]["stt"]["state"] == "done"
+    assert rows["rec-1"]["summary"]["state"] == "done"
+    assert rows["rec-2"]["backup"]["state"] == "done"
+    assert rows["rec-2"]["stt"]["state"] == "pending"
