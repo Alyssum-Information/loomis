@@ -120,7 +120,7 @@ diary_meeting_links (diary_entries ─ meetings)
 | Column | Type | Notes |
 |--------|------|-------|
 | id | TEXT PK | |
-| recording_id | TEXT FK→recordings | |
+| recording_id | TEXT FK→recordings, **UNIQUE** | one transcript per recording; re-running STT replaces it (idempotent) |
 | engine / model / language | TEXT | e.g. `whisperx` / `large-v3` / detected |
 | json_path | TEXT | full transcript JSON |
 | text | TEXT | plain text (for search) |
@@ -204,6 +204,11 @@ Similarity: cosine over `embedding`. Start with in-process numpy; adopt
 | worker_id | TEXT | claimer (crash reclaim) |
 | last_error | TEXT | actionable message surfaced in UI |
 | created_at / updated_at | TEXT | |
+
+Claiming is atomic (`BEGIN IMMEDIATE`: set `status='running'`, bump `attempts`, stamp
+`worker_id`). A `running` job whose `updated_at` is older than `[jobs].lease_seconds`
+is reclaimed (its worker crashed). On failure a job is requeued, or **parked** once
+`attempts` reaches `[jobs].max_attempts`.
 
 ### 4.14 `cloud_sync_log`
 `(id, remote, scope, started_at, finished_at, result, stats_json)`.

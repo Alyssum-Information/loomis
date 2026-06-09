@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field
 
@@ -30,6 +30,13 @@ class RecordingStatus(StrEnum):
     DONE = "done"
     QUARANTINED = "quarantined"
     FAILED = "failed"
+
+
+class RecordingKind(StrEnum):
+    """How a recording is summarized (set by the ``classify`` step, FR-6.1)."""
+
+    DIARY = "diary"
+    MEETING = "meeting"
 
 
 class JobType(StrEnum):
@@ -92,6 +99,7 @@ class Recording(BaseModel):
     imported_at: str | None = None
     source_deleted: bool = False
     status: RecordingStatus = RecordingStatus.IMPORTED
+    kind: RecordingKind | None = None  # diary | meeting, set by classify (FR-6.1)
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> Self:
@@ -115,6 +123,148 @@ class Job(BaseModel):
     def from_row(cls, row: sqlite3.Row) -> Self:
         d = dict(row)
         d["payload"] = _loads(d.get("payload"), {})
+        return cls.model_validate(d)
+
+
+class Transcript(BaseModel):
+    """STT output header for a recording (the words/timestamps live in ``json_path``)."""
+
+    id: str
+    recording_id: str
+    engine: str
+    model: str | None = None
+    language: str | None = None
+    json_path: str | None = None
+    text: str | None = None
+    created_at: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        return cls.model_validate(dict(row))
+
+
+class Segment(BaseModel):
+    """One time-aligned span of a transcript; the queryable index over the JSON."""
+
+    id: int | None = None
+    transcript_id: str
+    idx: int
+    start_s: float
+    end_s: float
+    speaker_id: int | None = None  # assigned in M3 (speaker id)
+    diarization_label: str | None = None  # raw label, assigned in M3
+    text: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        return cls.model_validate(dict(row))
+
+
+class Speaker(BaseModel):
+    """A cross-recording identity. Provisional until the user confirms/names it (FR-5.4)."""
+
+    id: int | None = None
+    display_name: str | None = None
+    is_provisional: bool = True
+    needs_review: bool = False
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        d = dict(row)
+        d["is_provisional"] = bool(d.get("is_provisional", 1))
+        d["needs_review"] = bool(d.get("needs_review", 0))
+        return cls.model_validate(d)
+
+
+class Voiceprint(BaseModel):
+    """One L2-normalized embedding contributing to a speaker's identity (FR-5.2)."""
+
+    id: int | None = None
+    speaker_id: int
+    embedding: list[float]
+    dim: int
+    source_recording_id: str | None = None
+    source_label: str | None = None
+    created_at: str | None = None
+
+
+# --- summarization: LLM structured-output schemas (feature 05 §2–4) ---
+# All fields default so a minimal/empty response (e.g. the null provider's "{}")
+# still validates — keeps offline/CI runs working without a model.
+
+
+class ClassifyResult(BaseModel):
+    """Diary-vs-meeting decision for one recording (FR-6.1)."""
+
+    type: Literal["diary", "meeting"] = "diary"
+    confidence: float = 0.0
+    reason: str = ""
+
+
+class DiaryDoc(BaseModel):
+    """LLM output for a day's first-person diary entry (FR-6.2)."""
+
+    title: str = ""
+    narrative_markdown: str = ""
+    topics: list[str] = Field(default_factory=list)
+    mood: str = ""
+    todos: list[str] = Field(default_factory=list)
+    decisions: list[str] = Field(default_factory=list)
+    mentioned_people: list[str] = Field(default_factory=list)
+
+
+class ActionItem(BaseModel):
+    owner: str = ""
+    task: str = ""
+    due: str | None = None
+
+
+class MeetingDoc(BaseModel):
+    """LLM output for a standalone meeting record (FR-6.3, FR-6.4)."""
+
+    title: str = ""
+    attendees: list[str] = Field(default_factory=list)
+    summary_markdown: str = ""
+    decisions: list[str] = Field(default_factory=list)
+    action_items: list[ActionItem] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
+
+
+# --- summarization: persisted row models ---
+
+
+class DiaryEntry(BaseModel):
+    id: str
+    date: str  # local YYYY-MM-DD
+    title: str | None = None
+    markdown_path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    model: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        d = dict(row)
+        d["metadata"] = _loads(d.get("metadata"), {})
+        return cls.model_validate(d)
+
+
+class Meeting(BaseModel):
+    id: str
+    title: str | None = None
+    occurred_on: str | None = None
+    markdown_path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    model: str | None = None
+    created_at: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        d = dict(row)
+        d["metadata"] = _loads(d.get("metadata"), {})
         return cls.model_validate(d)
 
 

@@ -4,8 +4,9 @@ Python backend for [Loomis](../README.md): core, processing pipeline, background
 daemon, and the **FastAPI** REST/WebSocket API the Vue SPA (`../web/`) consumes.
 
 > Pre-alpha. Implemented: typed config, SQLite + migration runner,
-> `GET /api/v1/health`, and the **M1 backup core** — device registration and the
-> SHA-256 safety-spine import (`loomis backup`). Features land per the
+> `GET /api/v1/health`, and **M1 — safe ingest**: the backup core (`loomis backup`)
+> plus the transcription pipeline — a durable job runner with a swappable STT engine
+> and optional Opus transcode (`loomis worker`). Features land per the
 > [roadmap](../docs/08-roadmap-and-milestones.md).
 
 ## Develop
@@ -18,6 +19,8 @@ uv run loomis check      # report prerequisite tools (Node, pnpm, ffmpeg, Ollama
 uv run loomis serve      # run only the API at http://127.0.0.1:8080
 uv run loomis backup E:\  # import audio from a recorder volume (safety-spine)
 uv run loomis backup --watch  # poll for recorders and import on connect
+uv run loomis worker --once   # drain the pipeline queue (transcode -> stt) and exit
+uv run loomis worker          # run the durable job runner continuously
 uv run loomis version
 
 uv run ruff format . && uv run ruff check .

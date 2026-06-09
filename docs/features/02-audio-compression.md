@@ -48,12 +48,19 @@ step 6 of the backup safety spine
 ([07 §4](01-device-registration-and-backup.md#4-backup--ingest-fr-21--fr-28)).
 A failed transcode never triggers source deletion.
 
+> Validation uses `ffprobe`; if it is unavailable the transcode cannot be verified,
+> so `transcode_only` safely refuses to delete the original (the job parks instead).
+
 ## 5. Pipeline position
 
 `transcode` is the first job step
-([04 §6](../04-system-architecture.md#6-processing-pipeline)); it also produces
-the normalized audio handed to STT, so it runs even when storage policy is
-`keep_original` (the normalized copy can be transient).
+([04 §6](../04-system-architecture.md#6-processing-pipeline)).
+
+**M1 behaviour:** the `transcode` step is enqueued **only** for the
+`transcode_keep` / `transcode_only` policies; under `keep_original` STT reads the
+original directly (no transcode). Producing a normalized/loudness-corrected copy
+to feed STT even under `keep_original` is an optimisation deferred to a later
+milestone (see §6) so the M1 path stays simple and avoids redundant work.
 
 ## 6. Open questions
 

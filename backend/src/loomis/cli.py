@@ -107,6 +107,48 @@ def _backup(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def _worker(args: argparse.Namespace) -> int:
+    import threading
+
+    from .jobs import JobRunner
+    from .logging_setup import configure_logging
+    from .pipeline import HANDLERS
+
+    settings = get_settings()
+    configure_logging(settings.core.log_level)
+
+    handlers = HANDLERS
+    if args.types:
+        from .models import JobType
+
+        wanted = {JobType(t.strip()) for t in args.types.split(",") if t.strip()}
+        handlers = {k: v for k, v in HANDLERS.items() if k in wanted}
+
+    runner = JobRunner(settings, handlers)
+    conn = _open_db(settings)
+    try:
+        if args.once:
+            n = runner.drain(conn)
+            print(f"processed {n} job(s)")
+            return 0
+    finally:
+        conn.close()
+
+    # Long-running mode: a bounded worker pool until Ctrl-C.
+    print("Job runner started - Ctrl-C to stop.")
+    stop = threading.Event()
+    pool = threading.Thread(target=runner.serve, args=(stop,), name="job-runner")
+    pool.start()
+    try:
+        while pool.is_alive():
+            pool.join(0.5)
+    except KeyboardInterrupt:
+        print("\nStopping...")
+        stop.set()
+        pool.join()
+    return 0
+
+
 def _serve(_: argparse.Namespace) -> int:
     import uvicorn
 
@@ -170,6 +212,15 @@ def main(argv: list[str] | None = None) -> int:
         help="delete each source file after its backup is verified (FR-2.5)",
     )
     p_backup.set_defaults(func=_backup)
+
+    p_worker = sub.add_parser(
+        "worker", help="run the pipeline job runner (transcode → … → diarize → summaries)"
+    )
+    p_worker.add_argument(
+        "--once", action="store_true", help="drain the queue once and exit (no polling loop)"
+    )
+    p_worker.add_argument("--types", help="comma-separated job types to handle (default: all)")
+    p_worker.set_defaults(func=_worker)
 
     p_serve = sub.add_parser("serve", help="run only the FastAPI API")
     p_serve.set_defaults(func=_serve)
