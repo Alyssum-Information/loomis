@@ -20,9 +20,10 @@ services (OneDrive, Google Drive, …) and cloud LLMs are strictly opt-in.
 
 🚧 **Pre-alpha — early implementation.** The design is the spec (see
 [`docs/`](docs/)). Built so far: typed config, SQLite + migration runner, the
-FastAPI `health` API, the Vue + Vuetify SPA skeleton, and the **M1 backup core**
-— device registration plus the SHA-256 "safety spine" import (`loomis backup`).
-Transcription, speakers, summaries, and the full UI follow per the
+FastAPI `health` API, the Vue + Vuetify SPA skeleton, and **M1 — safe ingest**:
+the SHA-256 "safety spine" backup (`loomis backup`) plus the durable
+transcription pipeline (`loomis worker` — WhisperX with optional Opus transcode).
+Speakers, summaries, and the full UI follow per the
 [roadmap](docs/08-roadmap-and-milestones.md).
 
 ## Getting started

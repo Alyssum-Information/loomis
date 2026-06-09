@@ -22,14 +22,14 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **One-click launcher:** `loomis up` (default) starts the backend + Vite together
   with multiplexed logs, health-wait, and child-only shutdown; `loomis check`
   reports prerequisites; `--prod` builds and serves the SPA from the backend.
-- **M1 backup core** (FR-1.1–1.6, FR-2.1–2.8): device detection (psutil poll) and
+- **M1 safe ingest — backup core** (FR-1.1–1.6, FR-2.1–2.8): device detection (psutil poll) and
   registration via `<volume>/.loomis/device.json`; the SHA-256 safety-spine import
   (copy → verify → dedupe → commit → optional gated source delete); a per-device
   free-space guard; failed copies recorded in a `quarantine` table; orphaned
   staging files swept at the start of each run; structured logging. CLI:
   `loomis backup [VOLUME] [--watch] [--name] [--auto-delete]`.
 
-- **M2 transcription pipeline** (FR-3.1–3.4, FR-4.1–4.5): a durable SQLite job
+- **M1 safe ingest — transcription pipeline** (FR-3.1–3.4, FR-4.1–4.5): a durable SQLite job
   runner (atomic claim, retry → park, crash-reclaim by lease) with a bounded
   worker pool; a swappable `STTEngine` (WhisperX with GPU/CPU auto + lazy load,
   plus a dep-free `null` engine for offline/CI); transcript + time-aligned segment
@@ -44,4 +44,4 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The pipeline runs via `loomis worker`; WhisperX is an opt-in extra
   (`uv sync --extra stt`) and needs ffmpeg on PATH for transcode.
 
-_See the [roadmap](docs/08-roadmap-and-milestones.md) for what's next (M2: transcription)._
+_See the [roadmap](docs/08-roadmap-and-milestones.md) for what's next (M2: local intelligence — speakers + summaries)._

@@ -4,8 +4,8 @@ Python backend for [Loomis](../README.md): core, processing pipeline, background
 daemon, and the **FastAPI** REST/WebSocket API the Vue SPA (`../web/`) consumes.
 
 > Pre-alpha. Implemented: typed config, SQLite + migration runner,
-> `GET /api/v1/health`, the **M1 backup core** (`loomis backup`), and the
-> **M2 transcription pipeline** — a durable job runner plus a swappable STT engine
+> `GET /api/v1/health`, and **M1 — safe ingest**: the backup core (`loomis backup`)
+> plus the transcription pipeline — a durable job runner with a swappable STT engine
 > and optional Opus transcode (`loomis worker`). Features land per the
 > [roadmap](../docs/08-roadmap-and-milestones.md).
 

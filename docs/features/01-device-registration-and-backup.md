@@ -82,6 +82,6 @@ half-committed; the ledger makes reconnect resume idempotently
 
 - ~~Heuristic for `recorded_at` when the device provides no reliable metadata.~~
   **Decided (M1):** fall back to the source file's mtime; richer container/metadata
-  probing is deferred to transcription (M2), which already opens each file.
+  probing is deferred to transcription (also M1), which already opens each file.
 - Whether to detect device-side file *moves/renames* vs treat as new (hash dedupe
   already covers content identity).
