@@ -4,76 +4,78 @@
 |---|---|
 | **Document** | Roadmap & Milestones |
 | **Doc ID** | LM-08 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-09 |
 | **Related** | [03 SRS](03-requirements-specification.md), [features/](features/) |
 | **Traces** | All FRs (sequenced) |
 
 ---
 
-Milestone-based, value-first ordering. Each milestone is independently useful.
-IDs reference [03 SRS](03-requirements-specification.md). A plan, not a promise.
+Milestones staged by **completeness**, not by feature. Each milestone is a
+maturity gate: it moves the whole product from one usable level to the next, and
+bundles whatever features that level requires. A milestone is "done" only when
+its **exit criteria** hold. IDs reference [03 SRS](03-requirements-specification.md).
+A plan, not a promise.
 
-## M0 — Project scaffold ✅ (this stage)
-Design docs, ADRs, and OSS project files. No application code yet.
+## M0 — Foundation ✅
+Design docs, ADRs, and OSS project files. The plan is the contract; no
+application code yet.
+> **Exit:** design stable enough to build against. **Met.**
 
-## M1 — Backup core (the safety spine) ✅
-*Goal: plug in a device and reliably, safely import audio.*
-[features/01](features/01-device-registration-and-backup.md)
-- ✅ Device detection (psutil poll) + registration — FR-1.1–1.5
-- ✅ `device.json` read/write/validate — FR-1.2/1.3
-- ✅ Backup ledger, copy, **SHA-256 verify**, quarantine — FR-2.1–2.4, 2.6, 2.7
-- ✅ Optional source deletion gated on verification — FR-2.5
-- ✅ SQLite schema + migrations — FR-9.2/9.3 · Config loading — FR-9.1
-- ✅ CLI to run a backup (`loomis backup [VOLUME] [--watch] [--auto-delete]`)
-> Exit: no data-loss path; re-import idempotent. **Met.**
-> Native USB events (WMI/pyudev) remain a later optimisation over the poll baseline.
+## M1 — Safe ingest ✅
+*The device-to-transcript spine works, headless and durable. Audio is captured
+without data loss and every recording becomes a transcript on disk.*
+[features/01](features/01-device-registration-and-backup.md),
+[features/02](features/02-audio-compression.md),
+[features/03](features/03-transcription.md)
 
-## M2 — Transcription & transcripts ✅
-*Goal: every imported recording becomes a searchable transcript.*
-[features/02](features/02-audio-compression.md), [features/03](features/03-transcription.md)
+- ✅ Device detection + registration, `device.json` validate — FR-1.1–1.5
+- ✅ Backup ledger, copy, **SHA-256 verify**, quarantine, gated source delete — FR-2.1–2.7
+- ✅ SQLite schema + migrations, config loading — FR-9.1–9.3
 - ✅ Durable job queue + worker pool (atomic claim, retry/park, crash-reclaim) — 04 §7
-- ✅ Swappable `STTEngine` (WhisperX, GPU/CPU auto, lazy load; `null` for offline/CI) — FR-4.1–4.5
-- ✅ Transcript + segment persistence (`transcripts/<id>.json` + DB; idempotent) — FR-4.3
+- ✅ Swappable `STTEngine` (WhisperX; `null` for offline/CI), transcript persistence — FR-4.1–4.5
 - ✅ Optional Opus transcode + validation, gated source delete — FR-3.1–3.4
-- ✅ CLI runner: `loomis worker [--once] [--types ...]`
-> Diarization stays in M3; after `stt` the recording is marked done for now.
+- ✅ CLI: `loomis backup …`, `loomis worker …`
+> **Exit:** no data-loss path; pipeline idempotent & crash-resumable through
+> `stt`. **Met.** Native USB events (WMI/pyudev) remain a later poll optimisation.
 
-## M3 — Speakers
-*Goal: know who spoke, across recordings.*
-[features/04](features/04-speaker-diarization-and-identification.md)
-- pyannote diarization — FR-5.1
-- Voiceprint embeddings + matching/enrollment — FR-5.2–5.4, 5.7
-- Provisional identities — FR-5.4
-
-## M4 — Summaries & organization
-*Goal: diaries and meetings, automatically.*
+## M2 — Local intelligence (Alpha, headless)
+*The pipeline runs end-to-end. Plug in a device and the library fills itself with
+who-said-what and daily diaries + meetings — all local, CLI-driven, no UI yet.*
+[features/04](features/04-speaker-diarization-and-identification.md),
 [features/05](features/05-summarization-and-organization.md)
-- Diary vs meeting classification — FR-6.1
+
+- pyannote diarization, voiceprint embeddings, matching/enrollment, provisional identities — FR-5.1–5.4, 5.7
 - LLM adapter (Ollama default) + structured output — FR-6.9
+- Diary vs meeting classification — FR-6.1
 - Daily diary aggregation — FR-6.2, 6.5, 6.8
 - Meeting extraction + diary linking — FR-6.3, 6.4, 6.6
 - Markdown + metadata output — FR-6.7
+> **Exit:** a recording flows `import → … → {diary|meeting} → link` unattended;
+> a real, browsable-on-disk lifelog exists without a UI.
 
-## M5 — API + Web UI
-*Goal: a lifelog you want to browse.* [07 UI/UX](07-ui-ux-design.md), [11 API](11-api-specification.md)
+## M3 — Browsable product (Beta)
+*The lifelog becomes something you actually open and use daily.*
+[07 UI/UX](07-ui-ux-design.md), [11 API](11-api-specification.md)
+
 - **Backend:** FastAPI REST/WebSocket surface + OpenAPI — FR-7.9
-- **Frontend:** Vue 3 + Vuetify SPA scaffold (Vite, Pinia, generated API client) in `web/` — FR-7.1
+- **Frontend:** Vue 3 + Vuetify SPA (Vite, Pinia, generated API client) in `web/` — FR-7.1
 - Timeline, recording detail, transcript player — FR-7.2/7.3
 - Speaker management — FR-7.4, FR-5.5/5.6
-- Full-text search (FTS5) — FR-7.5 · Jobs/health (live over WebSocket) — FR-7.6
+- Full-text search (FTS5) — FR-7.5 · live jobs/health over WebSocket — FR-7.6
 - Settings + egress indicators — FR-7.7/7.8
+> **Exit:** a non-CLI user can browse, search, and manage the lifelog start to finish.
 
-## M6 — Cloud sync (opt-in)
-*Goal: your own off-machine backup.* [features/06](features/06-cloud-sync.md)
-- rclone wrapper + remote config — FR-8.1/8.2
-- Scheduled/manual push with progress — FR-8.3
-- Push-only safety guarantees — FR-8.4
+## M4 — Release 1.0
+*Trustworthy, installable, and optionally backed up off-machine.*
+[features/06](features/06-cloud-sync.md)
 
-## M7 — Hardening & release
-- Packaging/run-as-service on Windows; first-run setup
+- Opt-in cloud sync: rclone wrapper + remote config, scheduled/manual push, push-only safety — FR-8.1–8.4
+- Packaging / run-as-service on Windows; first-run setup
 - Test coverage on the integrity spine and pipeline resume
 - Docs polish, example data, `CHANGELOG` 0.1.0
+> **Exit:** clean install on a fresh machine; integrity spine covered by tests;
+> off-machine backup available without breaking local-first defaults.
 
 ## Backlog / ideas (unscheduled)
 - Weekly/monthly diary roll-ups
