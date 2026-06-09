@@ -22,8 +22,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # Heavy/feature deps land here as milestones arrive, to keep the base lean.
-stt   = ["whisperx>=3.1"]  # WhisperX (pulls torch) (ADR-0002)        — M2 (opt-in)
-llm   = ["httpx>=0.27"]  # provider HTTP         (ADR-0005)         — M4
+stt     = ["whisperx>=3.1"]  # WhisperX (pulls torch) (ADR-0002)      — M1 (opt-in)
+diarize = ["pyannote.audio>=3.1"]  # diarization + embeddings (ADR-0007) — M2 (opt-in)
+llm     = ["httpx>=0.27"]  # provider HTTP         (ADR-0005)         — M2
 cloud = []            # rclone is an external binary, not a dep     (ADR-0004)
 gpu   = []            # CUDA-specific extras
 windows = []          # pywin32 for native USB events (ADR-0011)

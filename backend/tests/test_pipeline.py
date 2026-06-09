@@ -9,7 +9,13 @@ from pathlib import Path
 import pytest
 
 from loomis import backup, db, pipeline, repository
-from loomis.config import CoreSettings, Settings, SttSettings
+from loomis.config import (
+    CoreSettings,
+    DiarizeSettings,
+    Settings,
+    SpeakerIdSettings,
+    SttSettings,
+)
 from loomis.devicefile import device_file_path
 from loomis.jobs import JobRunner
 
@@ -17,8 +23,13 @@ _AUDIO = b"RIFF\x00\x00\x00\x00WAVEfake-audio" * 8
 
 
 def _settings(tmp_path: Path) -> Settings:
-    # Null STT engine keeps the test offline (no torch/whisperx, no GPU).
-    return Settings(core=CoreSettings(data_dir=tmp_path / "data"), stt=SttSettings(engine="null"))
+    # Null engines keep the test offline (no torch/whisperx/pyannote, no GPU).
+    return Settings(
+        core=CoreSettings(data_dir=tmp_path / "data"),
+        stt=SttSettings(engine="null"),
+        diarize=DiarizeSettings(engine="null"),
+        speaker_id=SpeakerIdSettings(engine="null"),
+    )
 
 
 def _conn(settings: Settings) -> sqlite3.Connection:
@@ -57,7 +68,7 @@ def test_backup_then_stt_persists_transcript(tmp_path: Path) -> None:
     backup.run_backup(conn, device, vol, settings)  # keep_original → enqueues stt
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 1
+    assert processed == 3  # stt → diarize → speaker_id
 
     t = conn.execute("SELECT * FROM transcripts").fetchone()
     assert t is not None
@@ -96,7 +107,7 @@ def test_transcode_only_replaces_original_then_transcribes(
     backup.run_backup(conn, device, vol, settings)  # policy != keep_original → enqueues transcode
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 2  # transcode, then stt
+    assert processed == 4  # transcode → stt → diarize → speaker_id
 
     rec = conn.execute("SELECT library_path, codec, status FROM recordings").fetchone()
     assert rec["codec"] == "opus"

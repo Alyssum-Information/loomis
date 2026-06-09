@@ -1259,6 +1259,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+diarize = [
+    { name = "pyannote-audio" },
+]
 llm = [
     { name = "httpx" },
 ]
@@ -1281,12 +1284,13 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'llm'", specifier = ">=0.27" },
     { name = "psutil", specifier = ">=5.9" },
+    { name = "pyannote-audio", marker = "extra == 'diarize'", specifier = ">=3.1" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
     { name = "whisperx", marker = "extra == 'stt'", specifier = ">=3.1" },
 ]
-provides-extras = ["stt", "llm", "cloud", "gpu", "windows"]
+provides-extras = ["stt", "diarize", "llm", "cloud", "gpu", "windows"]
 
 [package.metadata.requires-dev]
 dev = [

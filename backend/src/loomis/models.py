@@ -152,6 +152,36 @@ class Segment(BaseModel):
         return cls.model_validate(dict(row))
 
 
+class Speaker(BaseModel):
+    """A cross-recording identity. Provisional until the user confirms/names it (FR-5.4)."""
+
+    id: int | None = None
+    display_name: str | None = None
+    is_provisional: bool = True
+    needs_review: bool = False
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        d = dict(row)
+        d["is_provisional"] = bool(d.get("is_provisional", 1))
+        d["needs_review"] = bool(d.get("needs_review", 0))
+        return cls.model_validate(d)
+
+
+class Voiceprint(BaseModel):
+    """One L2-normalized embedding contributing to a speaker's identity (FR-5.2)."""
+
+    id: int | None = None
+    speaker_id: int
+    embedding: list[float]
+    dim: int
+    source_recording_id: str | None = None
+    source_label: str | None = None
+    created_at: str | None = None
+
+
 class Quarantine(BaseModel):
     """A copy that failed SHA-256 verification — kept for inspection, source never deleted."""
 

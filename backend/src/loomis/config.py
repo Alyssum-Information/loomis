@@ -79,6 +79,30 @@ class SttSettings(BaseModel):
     language: str = "auto"  # auto-detect, or force e.g. "zh"
 
 
+class DiarizeSettings(BaseModel):
+    """Speaker diarization engine selection (see docs/features/04, ADR-0007)."""
+
+    engine: str = "pyannote"  # pyannote | null (null = offline/dev stub, no GPU deps)
+    model: str = "pyannote/speaker-diarization-3.1"
+    hf_token: str | None = None  # HuggingFace token for the gated pyannote model
+    device: str = "auto"  # auto | cuda | cpu
+    min_speakers: int | None = None  # hint; None lets pyannote decide
+    max_speakers: int | None = None
+
+
+class SpeakerIdSettings(BaseModel):
+    """Voiceprint embedding + cross-recording matching (see docs/features/04 §4–5)."""
+
+    engine: str = "pyannote"  # pyannote | null
+    model: str = "pyannote/embedding"
+    device: str = "auto"
+    # Conservative defaults: prefer a new provisional identity over a wrong merge (§5).
+    match_threshold: float = 0.70  # cosine ≥ this (with margin) → assign to existing
+    margin: float = 0.10  # best must beat runner-up by this to assign confidently
+    new_identity_below: float = 0.55  # best < this → create a new provisional identity
+    vector_backend: str = "memory"  # memory (brute-force cosine) | sqlite-vec (future, §8)
+
+
 class TranscodeSettings(BaseModel):
     """Opus transcode parameters (see docs/features/02, ADR-0008)."""
 
@@ -113,6 +137,8 @@ class Settings(BaseSettings):
     api: ApiSettings = Field(default_factory=ApiSettings)
     backup: BackupSettings = Field(default_factory=BackupSettings)
     stt: SttSettings = Field(default_factory=SttSettings)
+    diarize: DiarizeSettings = Field(default_factory=DiarizeSettings)
+    speaker_id: SpeakerIdSettings = Field(default_factory=SpeakerIdSettings)
     transcode: TranscodeSettings = Field(default_factory=TranscodeSettings)
     jobs: JobsSettings = Field(default_factory=JobsSettings)
 
