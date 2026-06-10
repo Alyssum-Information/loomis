@@ -11,10 +11,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from loomis import backup, db, repository
-from loomis.config import CoreSettings, Settings
-from loomis.devicefile import DeviceFile, device_file_path
-from loomis.storage import sha256_file
+from loomis.core import db, repository
+from loomis.core.config import BackupSettings, CoreSettings, Settings
+from loomis.core.storage import sha256_file
+from loomis.ingest import backup
+from loomis.ingest.devicefile import DeviceFile, device_file_path
 
 _AUDIO = b"RIFF\x00\x00\x00\x00WAVEfmt fake-audio-bytes-for-testing" * 16
 
@@ -36,7 +37,11 @@ def _write_device_json(volume: Path, **overrides: object) -> None:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    return Settings(core=CoreSettings(data_dir=tmp_path / "data"))
+    return Settings(
+        core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
+    )
 
 
 @pytest.fixture
@@ -302,6 +307,8 @@ def test_cli_backup_entry_point(
     from loomis.cli import main
 
     monkeypatch.setenv("LOOMIS_CORE__DATA_DIR", str(tmp_path / "clidata"))
+    # The temp volume registers as a folder source; skip the sync settle window.
+    monkeypatch.setenv("LOOMIS_BACKUP__FOLDER_SETTLE_SECONDS", "0")
     rc = main(["backup", str(volume)])
 
     assert rc == 0

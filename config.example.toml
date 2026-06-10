@@ -19,7 +19,9 @@ open_browser = true
 #   LOOMIS_API__TOKEN=...
 
 [backup]
-poll_interval_s          = 3
+poll_interval_s          = 3               # USB volume poll cadence
+folder_poll_interval_s   = 60              # watched-folder scan cadence (phone-sync folders)
+folder_settle_seconds    = 10              # import folder files only after mtime is this quiet
 staging_dir              = "staging"
 verify_hash              = "sha256"        # integrity gate before source deletion
 auto_delete_after_backup = false           # delete from device only after verified copy

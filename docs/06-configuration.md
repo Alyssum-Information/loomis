@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | Configuration Reference |
 | **Doc ID** | LM-06 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [05 Data Model](05-data-model-and-storage.md), [09 Security & Privacy](09-security-and-privacy-model.md), [features/](features/) |
 | **Traces** | FR-9.1, FR-9.2, FR-7.8, NFR-1, NFR-9 |
 
@@ -43,7 +43,9 @@ serve_spa = true                # backend serves the built web/ SPA at "/"
 open_browser = true
 
 [backup]
-poll_interval_s = 3
+poll_interval_s = 3             # USB volume poll cadence
+folder_poll_interval_s = 60     # watched-folder scan cadence (folder sources, FR-1.12)
+folder_settle_seconds = 10      # import a folder file only after its mtime is this quiet
 staging_dir = "staging"
 verify_hash = "sha256"          # integrity gate before any source deletion
 auto_delete_after_backup = false
@@ -129,9 +131,9 @@ direction = "push"              # push-only; never deletes local
   ([FR-7.8](03-requirements-specification.md#fr-7-user-interface)). See
   [09 Security & Privacy](09-security-and-privacy-model.md).
 
-## 4. Per-device overrides
+## 4. Per-source overrides
 
 `auto_delete_after_backup` and `transcode_policy` can be set globally here and
-overridden per device in that device's
-[`device.json`](05-data-model-and-storage.md#2-on-device-registration-file--devicejson).
-The device value wins.
+overridden per source (USB device or watched folder) in that source's
+[`device.json`](05-data-model-and-storage.md#2-on-source-registration-file--devicejson).
+The source value wins.

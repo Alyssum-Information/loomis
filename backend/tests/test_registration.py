@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from loomis import backup, db, repository
-from loomis.config import (
+from loomis.core import db, repository
+from loomis.core.config import (
+    BackupSettings,
     CoreSettings,
     DiarizeSettings,
     LlmSettings,
@@ -16,14 +17,17 @@ from loomis.config import (
     SpeakerIdSettings,
     SttSettings,
 )
+from loomis.core.events import EventBus, drain
 from loomis.daemon import Daemon
-from loomis.devicefile import device_file_path
-from loomis.events import EventBus, drain
+from loomis.ingest import backup
+from loomis.ingest.devicefile import device_file_path
 
 
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),
@@ -74,10 +78,11 @@ def test_unregister_keeps_recordings_drops_marker(
     settings = _settings(tmp_path)
     conn = _conn(settings)
     vol = _volume(tmp_path)
+    # The temp volume isn't real removable media; present it as one so registration,
+    # the marker-removal scan, and the serial fallback all see a USB device.
+    monkeypatch.setattr(backup, "removable_volumes", lambda: {vol})
     device = backup.register_device(conn, vol, settings)
 
-    # The temp volume isn't real removable media; make the marker-removal scan find it.
-    monkeypatch.setattr(backup, "removable_volumes", lambda: {vol})
     assert backup.unregister_device(conn, device.id) is True
     assert not device_file_path(vol).exists()  # marker removed (volume connected)
 

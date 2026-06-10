@@ -211,6 +211,16 @@ _MIGRATION_007 = """
 ALTER TABLE devices ADD COLUMN registered INTEGER NOT NULL DEFAULT 1;
 """
 
+# 008 — M4: sources beyond USB + named speakers.
+# devices.kind/source_path make watched folders first-class sources (FR-1.11,
+# ADR-0012); speakers.suggested_name carries the LLM's name proposal until the
+# user confirms it (FR-5.8).
+_MIGRATION_008 = """
+ALTER TABLE devices ADD COLUMN kind TEXT NOT NULL DEFAULT 'usb';
+ALTER TABLE devices ADD COLUMN source_path TEXT;
+ALTER TABLE speakers ADD COLUMN suggested_name TEXT;
+"""
+
 MIGRATIONS: Sequence[tuple[int, str]] = (
     (1, _MIGRATION_001),
     (2, _MIGRATION_002),
@@ -219,6 +229,7 @@ MIGRATIONS: Sequence[tuple[int, str]] = (
     (5, _MIGRATION_005),
     (6, _MIGRATION_006),
     (7, _MIGRATION_007),
+    (8, _MIGRATION_008),
 )
 
 

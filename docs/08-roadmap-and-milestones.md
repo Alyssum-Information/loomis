@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | Roadmap & Milestones |
 | **Doc ID** | LM-08 |
-| **Version** | 0.2 (Draft) |
-| **Last updated** | 2026-06-09 |
+| **Version** | 0.3 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [03 SRS](03-requirements-specification.md), [features/](features/) |
 | **Traces** | All FRs (sequenced) |
 
@@ -66,7 +66,26 @@ who-said-what and daily diaries + meetings — all local, CLI-driven, no UI yet.
 - Settings + egress indicators — FR-7.7/7.8
 > **Exit:** a non-CLI user can browse, search, and manage the lifelog start to finish.
 
-## M4 — Release 1.0
+## M4 — Universal ingest & named speakers
+*Any recording source feeds the lifelog, and the people in it have real names.
+This closes the product-shape gaps found in the pre-1.0 design review.*
+[features/01](features/01-device-registration-and-backup.md),
+[features/04](features/04-speaker-diarization-and-identification.md),
+[ADR-0012](adr/0012-folder-sources.md)
+
+- **Folder sources**: register a local folder (phone sync, lifelogger export,
+  manual drops) as a first-class source; daemon polls it through the same
+  ledger/safety spine; settle-window guard for in-flight sync writes — FR-1.11–1.13
+- **Speaker name suggestions**: diary/meeting prompts also extract names for
+  unnamed speakers from conversational evidence; stored as `suggested_name`,
+  surfaced in the Speakers screen for one-click confirmation — FR-5.8
+- **Backend restructure**: flat modules → `core/ ingest/ pipeline/ api/`
+  packages matching [04 §12](04-system-architecture.md#12-repository-layout)
+> **Exit:** a phone recording dropped by a sync tool flows to a finished
+> diary/meeting unattended; a meeting record names its attendees after one
+> confirmation click; the codebase layout matches the architecture doc.
+
+## M5 — Release 1.0
 *Trustworthy, installable, and optionally backed up off-machine.*
 [features/06](features/06-cloud-sync.md)
 

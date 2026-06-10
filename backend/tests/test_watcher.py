@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from loomis import watcher
-from loomis.watcher import DeviceWatcher
+from loomis.ingest import watcher
+from loomis.ingest.watcher import DeviceWatcher
 
 
 def test_removable_volumes_returns_paths() -> None:

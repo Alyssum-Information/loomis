@@ -1,12 +1,12 @@
 <template>
   <v-container class="py-6">
     <div class="d-flex align-center mb-4">
-      <h2 class="text-h5">Devices</h2>
+      <h2 class="text-h5">Sources</h2>
 
       <v-spacer />
 
       <v-btn color="primary" prepend-icon="mdi-plus" variant="tonal" @click="openAdd">
-        Add device
+        Add source
       </v-btn>
     </div>
 
@@ -47,7 +47,9 @@
       >
         <v-card v-if="edits[d.id]" class="h-100 d-flex flex-column">
           <v-card-title class="d-flex align-center ga-2">
-            <v-icon size="small">mdi-usb-flash-drive</v-icon>
+            <v-icon size="small">
+              {{ d.kind === 'folder' ? 'mdi-folder-sync' : 'mdi-usb-flash-drive' }}
+            </v-icon>
 
             <v-text-field
               v-model="edits[d.id].name"
@@ -63,7 +65,13 @@
 
           <v-card-text class="flex-grow-1">
             <div class="text-medium-emphasis text-caption mb-3">
-              Last seen: {{ d.last_seen_at ?? '—' }}
+              <template v-if="d.kind === 'folder'">
+                Watching: {{ d.source_path }} · Last scan: {{ d.last_seen_at ?? '—' }}
+              </template>
+
+              <template v-else>
+                Last seen: {{ d.last_seen_at ?? '—' }}
+              </template>
             </div>
 
             <v-switch
@@ -106,7 +114,8 @@
       <v-col v-if="devices.length === 0" cols="12">
         <v-card variant="tonal">
           <v-card-text class="text-medium-emphasis text-center py-8">
-            No devices yet. Plug in a recorder, or use <strong>Add device</strong>.
+            No sources yet. Plug in a recorder, or use <strong>Add source</strong> to
+            watch a folder (e.g. your phone's sync folder).
           </v-card-text>
         </v-card>
       </v-col>
@@ -114,13 +123,14 @@
 
     <v-dialog v-model="addOpen" max-width="520">
       <v-card>
-        <v-card-title>Register a device</v-card-title>
+        <v-card-title>Register a source</v-card-title>
 
         <v-card-text>
           <p class="text-medium-emphasis mb-4">
-            Point Loomis at the recorder's mounted drive or folder. A
-            <code>.loomis/device.json</code> marker is written there and the device
-            starts auto-importing.
+            Point Loomis at a recorder's mounted drive, or any local folder that
+            collects recordings (a phone-sync or lifelogger export folder). A
+            <code>.loomis/device.json</code> marker is written there and the source
+            starts auto-importing — drives on connect, folders by periodic scan.
           </p>
 
           <v-text-field

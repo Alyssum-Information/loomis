@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from loomis import db, repository
-from loomis.models import Device, JobStatus, JobType, Recording, RecordingStatus
-from loomis.schemas import RecordPipeline, StageState
+from loomis.api.schemas import RecordPipeline, StageState
+from loomis.core import db, repository
+from loomis.core.models import Device, JobStatus, JobType, Recording, RecordingStatus
 
 
 @pytest.fixture

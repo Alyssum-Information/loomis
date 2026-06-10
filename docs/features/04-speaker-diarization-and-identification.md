@@ -4,10 +4,10 @@
 |---|---|
 | **Document** | Feature Spec — Speaker Diarization & Identification |
 | **Doc ID** | LM-F04 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [03 Transcription](03-transcription.md), [05 Summarization](05-summarization-and-organization.md), [05 Data Model](../05-data-model-and-storage.md), [ADR-0007](../adr/0007-speaker-diarization-pyannote.md), [09 Security](../09-security-and-privacy-model.md) |
-| **Traces** | FR-5.1 … FR-5.7 |
+| **Traces** | FR-5.1 … FR-5.8 |
 
 ---
 
@@ -70,6 +70,23 @@ The UI ([07](../07-ui-ux-design.md)) lets the user **name**, **confirm/correct**
 **merge**, and **split** identities. Every correction writes back as
 curated/additional voiceprints, so future matching improves — the accuracy
 flywheel.
+
+### 6.1 LLM name suggestions (FR-5.8)
+
+Voiceprints give a *stable* identity, but not a *named* one. During
+summarization ([05 §5.1](05-summarization-and-organization.md#51-speaker-name-suggestions-fr-58))
+the LLM reads the conversation for naming evidence — being addressed
+("小明，你覺得呢？"), self-introductions, sign-offs — and proposes a name for
+each still-unnamed `Speaker N`.
+
+- Proposals land in `speakers.suggested_name` and flag the identity
+  `needs_review`; they **never** overwrite `display_name` on their own.
+- The Speakers screen shows the suggestion next to the identity; one click
+  accepts it as the display name (or the user types their own).
+- Accepting a name immediately upgrades every past and future record that
+  references the identity (attendee lists, transcript labels).
+- A suggestion is only attached when the speaker has no `display_name` yet;
+  re-running summaries refreshes stale suggestions idempotently.
 
 ## 7. Enrollment (FR-5.7)
 

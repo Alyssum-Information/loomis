@@ -1,15 +1,16 @@
 """Pipeline step handlers and their registry (04 §6).
 
-Each handler takes a claimed :class:`~loomis.models.Job` plus a context (DB
-connection + settings) and performs one idempotent step, enqueuing the next.
-M2 wires ``transcode? → stt → diarize → speaker_id``; ``speaker_id`` is terminal
-until the summaries PR adds ``classify``.
+Each handler takes a claimed :class:`~loomis.core.models.Job` plus a context (DB
+connection + settings) and performs one idempotent step, enqueuing the next:
+``transcode? → stt → diarize → speaker_id → classify →
+{diary_aggregate | meeting_extract}``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from collections.abc import Callable
 from contextlib import suppress
@@ -17,13 +18,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from . import repository
-from .classify import classify_segments
-from .config import Settings
-from .diarize import DiarTurn, get_diarize_engine
-from .events import EventBus
-from .llm import LLMProvider, complete_structured, get_provider, model_id
-from .models import (
+from ..core import repository
+from ..core.config import Settings
+from ..core.events import EventBus
+from ..core.models import (
     ClassifyResult,
     DiaryDoc,
     DiaryEntry,
@@ -34,11 +32,15 @@ from .models import (
     RecordingKind,
     RecordingStatus,
     Segment,
+    SpeakerNameGuess,
     TranscodePolicy,
     Transcript,
 )
+from ..core.sqlite_tx import transaction
+from .classify import classify_segments
+from .diarize import DiarTurn, get_diarize_engine
+from .llm import LLMProvider, complete_structured, get_provider, model_id
 from .speakerid import get_embedder, match
-from .sqlite_tx import transaction
 from .stt import get_engine
 from .summarize import (
     PROMPT_VERSION,
@@ -291,6 +293,30 @@ def handle_classify(ctx: JobContext, job: Job) -> None:
                 repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
 
 
+# Must match the unnamed-speaker fallback in repository.speaker_display_names,
+# which is what the prompts show the model (summarize.transcript_text).
+_SPEAKER_LABEL_RE = re.compile(r"^Speaker (\d+)$")
+
+
+def _apply_speaker_suggestions(ctx: JobContext, guesses: list[SpeakerNameGuess]) -> None:
+    """Store LLM name proposals on still-unnamed speakers (FR-5.8).
+
+    Suggestions never become display names here — the user confirms them in the
+    Speakers screen. Unparseable labels and unknown ids are ignored (the model may
+    hallucinate either).
+    """
+    for guess in guesses:
+        name = guess.name.strip()
+        label_match = _SPEAKER_LABEL_RE.match(guess.speaker.strip())
+        if not name or label_match is None:
+            continue
+        speaker_id = int(label_match.group(1))
+        if repository.find_speaker(ctx.conn, speaker_id) is None:
+            continue
+        if repository.suggest_speaker_name(ctx.conn, speaker_id, name) and ctx.bus is not None:
+            ctx.bus.publish("speaker.updated", {"speaker_id": speaker_id})
+
+
 def _summary_metadata(doc: DiaryDoc | MeetingDoc, provider: LLMProvider) -> dict[str, object]:
     """Summary content plus provenance (which model + prompt produced it) for reproducibility.
 
@@ -351,6 +377,7 @@ def handle_meeting_extract(ctx: JobContext, job: Job) -> None:
         repository.insert_meeting(
             conn, meeting, recording_ids=[rec_id], participant_ids=participant_ids
         )
+        _apply_speaker_suggestions(ctx, doc.speaker_names)
         repository.set_recording_status(conn, rec_id, RecordingStatus.DONE)
         if date:
             repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
@@ -402,6 +429,7 @@ def handle_diary_aggregate(ctx: JobContext, job: Job) -> None:
     with transaction(conn):
         repository.replace_diary_entry(conn, entry, [r.id for r in recordings])
         repository.link_diary_meetings(conn, entry_id, [m.id for m in meetings])
+        _apply_speaker_suggestions(ctx, doc.speaker_names)
 
     if ctx.bus is not None:
         ctx.bus.publish("diary.updated", {"date": date})

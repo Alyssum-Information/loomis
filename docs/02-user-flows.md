@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | User Flows |
 | **Doc ID** | LM-02 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [01 Vision](01-vision-and-scope.md), [03 SRS](03-requirements-specification.md), [04 Architecture](04-system-architecture.md), [features/](features/) |
 | **Traces** | Drives FR-1 … FR-9 |
 
@@ -39,6 +39,31 @@ in DB only; warn that on-device identification is unavailable (fall back to
 volume serial / label matching).
 
 > Detail: [features/01 Device Registration & Backup](features/01-device-registration-and-backup.md).
+
+## 1b. Folder source registration (phones, lifeloggers)
+
+**Trigger:** The user has recordings landing in a local folder — a phone's
+sync target (Syncthing / OneDrive / iCloud Drive), a wearable's companion-app
+export folder, or a folder they drop files into by hand.
+
+1. 🟡 User adds the folder on the Devices screen (or `loomis backup <folder>`),
+   with the same settings as a device: name, owner hint, globs, transcode
+   preference. Auto-delete defaults **off** (FR-1.13) — the folder usually
+   belongs to a sync tool, so Loomis copies and leaves it alone.
+2. 🟢 Loomis writes `<folder>/.loomis/device.json` (same contract as a recorder
+   volume) and inserts a `devices` row with `kind = "folder"`.
+3. 🟢 The daemon **polls** the folder (`[backup].folder_poll_interval_s`) and
+   imports anything new through the identical safety spine — ledger dedupe,
+   SHA-256 verify, quarantine (**§2** steps 3–9).
+
+**Failure handling:** Folder missing (drive unmounted, sync paused) → skip
+silently and retry next poll. Files still being written by the sync tool are
+not touched: a file is only imported once it has been **stable** for
+`[backup].folder_settle_seconds` (mtime quiet period), so a half-synced file
+never enters the library.
+
+> Detail: [features/01 §3.2](features/01-device-registration-and-backup.md),
+> [ADR-0012](adr/0012-folder-sources.md).
 
 ## 2. Auto-backup on connect
 
@@ -75,7 +100,9 @@ fully resumable.
    the voiceprint DB; assign known or provisional identity.
 5. 🟢 **Classify** the recording as *diary-type* or *meeting-type*.
 6. 🟢 Persist transcript + segments + speaker assignments.
-7. 🟢 Hand off to **§4** (diary) and/or **§5** (meeting).
+7. 🟢 Hand off to **§4** (diary) and/or **§5** (meeting). During those steps the
+   LLM also proposes **names for unnamed speakers** from conversational evidence
+   (FR-5.8); proposals surface in the UI for confirmation (**§6**).
 
 **Failure handling:** Each stage is a separate retryable job step with attempt
 counts and recorded errors; a failed stage blocks only its own recording.
@@ -115,7 +142,9 @@ multi-speaker discussion.
 - 🟡 **Timeline / calendar** of days, each showing diary entry + meeting chips.
 - 🟡 **Recording detail**: audio player, transcript with speaker labels, jump-to.
 - 🟡 **Speakers**: list of identities; rename, merge, split; confirm/correct
-  auto-assigned identities (feedback improves future matching).
+  auto-assigned identities (feedback improves future matching). LLM-suggested
+  names (FR-5.8) appear here for one-click acceptance — a suggestion never
+  becomes the display name on its own.
 - 🟡 **Search** across all transcripts, diaries, and meetings.
 - 🟡 **Jobs/health**: what's queued, running, failed; retry controls.
 - 🟡 **Settings**: devices, defaults, models, cloud remotes.

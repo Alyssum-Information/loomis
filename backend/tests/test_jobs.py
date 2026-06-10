@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from loomis import db, repository
-from loomis.models import JobType
+from loomis.core import db, repository
+from loomis.core.models import JobType
 
 
 @pytest.fixture

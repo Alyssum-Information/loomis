@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from .config import DiarizeSettings
-from .errors import PermanentJobError
+from ..core.config import DiarizeSettings
+from ..core.errors import PermanentJobError
 
 _DIARIZE_HINT = (
     "diarization deps are not installed — run ./install.sh "

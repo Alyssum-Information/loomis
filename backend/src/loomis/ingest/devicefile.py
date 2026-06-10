@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .models import TranscodePolicy
+from ..core.models import DeviceKind, TranscodePolicy
 
 SCHEMA = "loomis.device/v1"
 DEVICE_DIR = ".loomis"
@@ -23,7 +23,7 @@ _DEFAULT_GLOBS = ["**/*.wav", "**/*.mp3", "**/*.m4a"]
 
 
 def device_file_path(volume: Path) -> Path:
-    """Location of the registration file on a mounted recorder volume."""
+    """Location of the registration file in a source root (volume or watched folder)."""
     return volume / DEVICE_DIR / DEVICE_FILE
 
 
@@ -49,6 +49,7 @@ class DeviceFile(BaseModel):
 
     schema_: str = Field(default=SCHEMA, alias="schema")
     device_id: str
+    kind: DeviceKind = DeviceKind.USB  # usb volume or watched folder (ADR-0012)
     name: str
     owner_speaker_hint: str | None = None
     registered_at: str

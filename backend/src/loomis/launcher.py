@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .config import get_settings
+from .core.config import get_settings
 
 IS_WIN = os.name == "nt"
 
@@ -335,7 +335,7 @@ def up(*, prod: bool = False, open_browser: bool = True) -> int:
                 sys.executable,
                 "-m",
                 "uvicorn",
-                "loomis.app:create_app",
+                "loomis.api.app:create_app",
                 "--factory",
                 "--host",
                 settings.api.host,

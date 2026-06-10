@@ -2,21 +2,30 @@
 
 | | |
 |---|---|
-| **Document** | Feature Spec — Device Registration & Backup |
+| **Document** | Feature Spec — Source Registration & Backup (devices + folders) |
 | **Doc ID** | LM-F01 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
-| **Related** | [02 Flows §1–2](../02-user-flows.md), [05 Data Model](../05-data-model-and-storage.md), [02 Audio Compression](02-audio-compression.md), [ADR-0009](../adr/0009-device-registration-format.md), [ADR-0011](../adr/0011-usb-device-detection.md) |
-| **Traces** | FR-1.1 … FR-1.10, FR-2.1 … FR-2.8 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
+| **Related** | [02 Flows §1–2](../02-user-flows.md), [05 Data Model](../05-data-model-and-storage.md), [02 Audio Compression](02-audio-compression.md), [ADR-0009](../adr/0009-device-registration-format.md), [ADR-0011](../adr/0011-usb-device-detection.md), [ADR-0012](../adr/0012-folder-sources.md) |
+| **Traces** | FR-1.1 … FR-1.13, FR-2.1 … FR-2.8 |
 
 ---
 
 ## 1. Overview
 
-This is the entry point of the whole product: detect the recorder, recognize it,
-and import its recordings **without ever losing source audio**. It owns the
+This is the entry point of the whole product: detect a **source**, recognize
+it, and import its recordings **without ever losing source audio**. It owns the
 data-integrity "safety spine"
 ([04 §8](../04-system-architecture.md#8-data-integrity-the-safety-spine)).
+
+Two kinds of source share one registration model and one import path:
+
+| Kind | Examples | Arrival signal |
+|------|----------|----------------|
+| **USB device** (`kind = "usb"`) | dedicated recorder, recorder pen | volume connect event |
+| **Watched folder** (`kind = "folder"`) | phone sync target (Syncthing / OneDrive / iCloud), lifelogger companion-app export, manual drop folder | periodic folder poll |
+
+Rationale for folders as first-class sources: [ADR-0012](../adr/0012-folder-sources.md).
 
 ## 2. Device detection (FR-1.1)
 
@@ -49,9 +58,31 @@ imports it on its own — the user decides which volumes are recorders.
    / label (FR-1.5).
 
 `device.json` schema and the `devices` table:
-[05 §2](../05-data-model-and-storage.md#2-on-device-registration-file--devicejson),
+[05 §2](../05-data-model-and-storage.md#2-on-source-registration-file--devicejson),
 [05 §4.1](../05-data-model-and-storage.md#41-devices). Multiple devices are
 supported (FR-1.8); settings are editable later via the UI (FR-1.7).
+
+### 3.2 Folder sources (FR-1.11 … FR-1.13)
+
+A local folder registers exactly like a device, just without a connect event:
+
+1. 🟡 The user picks the folder (Devices screen or `loomis backup <folder>`;
+   a path that is not a removable volume is treated as a folder source).
+2. Loomis writes `<folder>/.loomis/device.json` — the same contract, with
+   `"kind": "folder"` — and inserts a `devices` row (`kind = "folder"`,
+   `source_path` = the absolute folder path).
+3. The daemon polls each registered folder every
+   `[backup].folder_poll_interval_s` (default 60 s) and runs the standard
+   import (§4) over it.
+4. **Sync safety:** a file is imported only after its mtime has been stable for
+   `[backup].folder_settle_seconds` (default 10 s), so files still being written
+   by a sync tool are never half-imported.
+5. **Deletion safety (FR-1.13):** `auto_delete` defaults off for folders and is
+   per-source opt-in; when enabled it behaves like FR-2.5 (delete only after a
+   verified, committed copy) — useful for true "hot drop" folders the user owns.
+
+Unregistering a folder works like §3.1: deactivate the row, best-effort remove
+`.loomis/device.json`, keep all imported recordings.
 
 ### 3.1 Unregister (FR-1.10)
 

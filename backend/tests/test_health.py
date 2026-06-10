@@ -6,8 +6,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from loomis.app import create_app
-from loomis.config import ApiSettings, CoreSettings, Settings
+from loomis.api.app import create_app
+from loomis.core.config import ApiSettings, CoreSettings, Settings
 
 
 def _settings(tmp_path: Path) -> Settings:

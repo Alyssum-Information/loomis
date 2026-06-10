@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | API Specification (backend ↔ frontend) |
 | **Doc ID** | LM-11 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-07 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [04 Architecture](04-system-architecture.md), [05 Data Model](05-data-model-and-storage.md), [07 UI/UX](07-ui-ux-design.md), [09 Security](09-security-and-privacy-model.md), [ADR-0003](adr/0003-frontend-vue-spa.md) |
 | **Traces** | FR-7.1 … FR-7.8 (frontend↔backend contract) |
 
@@ -43,15 +43,15 @@ a typed client.
 
 ## 3. REST resources (v1)
 
-### 3.1 Devices
+### 3.1 Devices (sources: USB volumes & watched folders)
 | Method | Path | Purpose | Traces |
 |--------|------|---------|--------|
-| GET | `/devices` | list registered devices + `last_seen` | FR-1.5/1.8 |
-| GET | `/devices/{id}` | device detail | — |
-| POST | `/devices/register` | register (or re-activate) a connected volume (name, owner hint, policies) — explicit, user-initiated | FR-1.3/1.4 |
+| GET | `/devices` | list registered sources + `kind` + `last_seen` | FR-1.5/1.8 |
+| GET | `/devices/{id}` | source detail | — |
+| POST | `/devices/register` | register (or re-activate) a source — a connected volume **or a local folder path** (name, owner hint, policies); `kind` is auto-detected (removable volume → `usb`, else `folder`) and can be passed explicitly — explicit, user-initiated | FR-1.3/1.4, FR-1.11 |
 | DELETE | `/devices/{id}` | unregister: remove `device.json` (when reachable) + deactivate; recordings retained | FR-1.10 |
-| PATCH | `/devices/{id}` | edit device settings | FR-1.7 |
-| GET | `/devices/pending` | connected volumes that are **not registered** (drives the prompt); only registered devices auto-import | FR-1.2/1.9 |
+| PATCH | `/devices/{id}` | edit source settings | FR-1.7 |
+| GET | `/devices/pending` | connected volumes that are **not registered** (drives the prompt); only registered sources auto-import | FR-1.2/1.9 |
 
 ### 3.2 Recordings & transcripts
 | Method | Path | Purpose |
@@ -69,11 +69,11 @@ a typed client.
 | POST | `/diary/{date}/resummarize` | re-run aggregation (→ job) | FR-6.8 |
 | GET | `/meetings/{id}` | meeting record | FR-6.3 |
 
-### 3.4 Speakers (FR-5.5/5.6)
+### 3.4 Speakers (FR-5.5/5.6/5.8)
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/speakers` | list identities (incl. provisional) |
-| PATCH | `/speakers/{id}` | rename / confirm |
+| GET | `/speakers` | list identities (incl. provisional + `suggested_name` from FR-5.8) |
+| PATCH | `/speakers/{id}` | rename / confirm (setting `display_name` clears `suggested_name`) |
 | POST | `/speakers/merge` | merge two identities (→ job) |
 | POST | `/speakers/{id}/split` | split an identity (→ job) |
 | POST | `/speakers/enroll` | enroll a known voice from a labeled clip |
@@ -101,6 +101,7 @@ A single channel pushes events so the UI reflects backend state without polling
 { "type": "recording.added", "data": { "recording_id", "device_id" } }
 { "type": "device.connected","data": { "device_id?", "volume", "registered": false } }
 { "type": "diary.updated",   "data": { "date" } }
+{ "type": "speaker.updated", "data": { "speaker_id" } }
 { "type": "egress.pending",  "data": { "kind": "cloud_sync|cloud_llm", "detail" } }
 ```
 

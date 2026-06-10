@@ -7,6 +7,35 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **M4 folder sources** (FR-1.11–1.13, ADR-0012): any local folder — a phone's
+  Syncthing/OneDrive/iCloud sync target, a lifelogger's export folder, a manual
+  drop folder — registers as a first-class source beside USB recorders. The
+  daemon polls registered folders (`[backup].folder_poll_interval_s`) through
+  the identical SHA-256 safety spine; a settle window
+  (`[backup].folder_settle_seconds`) keeps half-synced files out of the library;
+  folder sources never auto-delete by default. `loomis backup <path>` and
+  `POST /devices/register` auto-detect the source kind (removable volume → usb,
+  else folder); the Devices screen becomes **Sources** with an "Add source"
+  flow and per-folder watched-path display. Schema migration 008 adds
+  `devices.kind` / `devices.source_path`.
+- **M4 speaker name suggestions** (FR-5.8): the diary/meeting prompts (now
+  versioned **v2**) also extract names for unnamed speakers from conversational
+  evidence (being addressed by name, self-introductions). Proposals are stored
+  as `speakers.suggested_name` (+ `needs_review`) — never applied silently —
+  and surface in the Speakers screen as a one-click **Accept** chip; accepting
+  (or any manual rename) clears the suggestion. New `speaker.updated` WebSocket
+  event. Migration 008 adds the column.
+
+### Changed
+- **Backend restructured into packages** matching the architecture doc
+  (04 §12): `core/` (config, db, models, repository, storage, events, vectors),
+  `ingest/` (watcher, devicefile, backup), `pipeline/` (runner, steps, and the
+  step engines), `api/` (app, routes, schemas), with `cli.py` / `daemon.py` /
+  `launcher.py` at the top level. Pipeline read-models moved to `core.models`
+  and vector math to `core.vectors` so `core` has no upward dependencies. No
+  behavior change; the uvicorn factory is now `loomis.api.app:create_app`.
+
+### Added
 - **Record-centric pipeline view** (FR-7.6): new `GET /api/v1/pipeline` returns one row
   per recording with its stage states — **備份 backup** (the safety-spine import),
   **語音轉文字 STT** (transcript readiness: transcode/stt), and **摘要 summary** (the

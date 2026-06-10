@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -21,12 +22,21 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from . import __version__, repository
-from .config import Settings
+from .. import __version__
+from ..core import repository
+from ..core.config import Settings
+from ..core.models import (
+    Device,
+    DeviceKind,
+    JobType,
+    Quarantine,
+    Recording,
+    RecordingStatus,
+    TranscodePolicy,
+)
+from ..core.sqlite_tx import transaction
+from ..core.storage import Workspace, sha256_file, slugify
 from .devicefile import DeviceBackup, DeviceFile, DeviceTranscode, device_file_path
-from .models import Device, JobType, Quarantine, Recording, RecordingStatus, TranscodePolicy
-from .sqlite_tx import transaction
-from .storage import Workspace, sha256_file, slugify
 from .watcher import removable_volumes
 
 log = logging.getLogger(__name__)
@@ -49,10 +59,12 @@ def _now_iso() -> str:
     return datetime.now().astimezone().isoformat()
 
 
-def _device_from_file(df: DeviceFile) -> Device:
+def _device_from_file(df: DeviceFile, *, source_path: str | None = None) -> Device:
     return Device(
         id=df.device_id,
+        kind=df.kind,
         name=df.name,
+        source_path=source_path,
         audio_globs=df.audio_globs,
         auto_delete=df.backup.auto_delete_after_backup,
         transcode_policy=df.transcode.policy,
@@ -63,6 +75,11 @@ def _device_from_file(df: DeviceFile) -> Device:
         },
         min_free_bytes=df.backup.min_free_bytes_guard,
     )
+
+
+def detect_kind(path: Path) -> DeviceKind:
+    """USB when the path is a mounted removable volume, otherwise a folder source."""
+    return DeviceKind.USB if path in removable_volumes() else DeviceKind.FOLDER
 
 
 def _first_step(policy: TranscodePolicy) -> JobType:
@@ -77,20 +94,25 @@ def register_or_load_device(
     *,
     name: str | None = None,
     auto_delete: bool | None = None,
+    kind: DeviceKind | None = None,
 ) -> Device:
-    """Resolve the device for a volume, registering it on first sight (FR-1.2 … 1.6).
+    """Resolve the source for a path, registering it on first sight (FR-1.2 … 1.6, 1.11).
 
     Known ``device.json`` → ensure the DB row exists and return it. No file → fall
-    back to the volume's identity so an unwritable (read-only/full) recorder still
+    back to the source's identity so an unwritable (read-only/full) recorder still
     resolves to one stable row across reconnects (FR-1.5); otherwise generate an
-    id, write ``device.json`` (best-effort), and insert the row. The DB row is
-    authoritative for backup policy.
+    id, write ``device.json`` (best-effort), and insert the row. A path that is not
+    a mounted removable volume registers as a watched **folder** source
+    (ADR-0012). The DB row is authoritative for backup policy.
     """
+    kind = kind or detect_kind(volume)
+    source_path = str(volume.resolve()) if kind == DeviceKind.FOLDER else None
+
     path = device_file_path(volume)
     if path.exists():
         df = DeviceFile.load(path)
         device = repository.find_device(conn, df.device_id) or _register(
-            conn, _device_from_file(df)
+            conn, _device_from_file(df, source_path=source_path)
         )
         repository.touch_device(conn, device.id)
         return device
@@ -101,12 +123,18 @@ def register_or_load_device(
         repository.touch_device(conn, existing.id)
         return existing
 
-    delete_policy = (
-        auto_delete if auto_delete is not None else settings.backup.auto_delete_after_backup
-    )
+    # Folder sources never delete by default (FR-1.13) — the folder usually belongs
+    # to a sync tool; the global default only applies to recorder volumes.
+    if auto_delete is not None:
+        delete_policy = auto_delete
+    elif kind == DeviceKind.FOLDER:
+        delete_policy = False
+    else:
+        delete_policy = settings.backup.auto_delete_after_backup
     df = DeviceFile(
         device_id=str(uuid4()),
-        name=name or _default_device_name(serial),
+        kind=kind,
+        name=name or _default_device_name(kind, volume, serial),
         registered_at=_now_iso(),
         loomis_version=__version__,
         audio_globs=list(settings.backup.audio_globs),
@@ -118,7 +146,7 @@ def register_or_load_device(
     except OSError as exc:  # read-only / full volume → DB-only registration (FR-1.5)
         log.warning("could not write device.json to %s (%s); registering in DB only", path, exc)
 
-    device = _device_from_file(df)
+    device = _device_from_file(df, source_path=source_path)
     device.volume_serial = serial  # identity fallback when device.json is unavailable
     return _register(conn, device)
 
@@ -150,25 +178,36 @@ def register_device(
     *,
     name: str | None = None,
     auto_delete: bool | None = None,
+    kind: DeviceKind | None = None,
 ) -> Device:
-    """Explicitly register (or re-activate) a volume (FR-1.3): writes device.json + row."""
-    device = register_or_load_device(conn, volume, settings, name=name, auto_delete=auto_delete)
+    """Explicitly register (or re-activate) a source (FR-1.3, FR-1.11).
+
+    Writes ``device.json`` + the DB row. ``kind`` is auto-detected from the path
+    when not given (removable volume → usb, else folder).
+    """
+    device = register_or_load_device(
+        conn, volume, settings, name=name, auto_delete=auto_delete, kind=kind
+    )
     repository.set_device_registered(conn, device.id, True)
     device.registered = True
     return device
 
 
 def unregister_device(conn: sqlite3.Connection, device_id: str) -> bool:
-    """Deactivate a device (FR-1.10): mark unregistered + best-effort remove device.json.
+    """Deactivate a source (FR-1.10): mark unregistered + best-effort remove device.json.
 
     Keeps the row and its recordings. Returns False if the device id is unknown.
     """
-    if repository.find_device(conn, device_id) is None:
+    device = repository.find_device(conn, device_id)
+    if device is None:
         return False
     repository.set_device_registered(conn, device_id, False)
-    # Remove the on-device marker if the volume is currently connected.
-    for vol in removable_volumes():
-        path = device_file_path(vol)
+    # Remove the on-source marker if the source is currently reachable.
+    roots = set(removable_volumes())
+    if device.source_path:
+        roots.add(Path(device.source_path))
+    for root in roots:
+        path = device_file_path(root)
         if path.exists():
             try:
                 if DeviceFile.load(path).device_id == device_id:
@@ -180,15 +219,20 @@ def unregister_device(conn: sqlite3.Connection, device_id: str) -> bool:
 
 
 def _volume_identity(volume: Path) -> str:
-    """Stable-enough key for a volume lacking ``device.json``.
+    """Stable-enough key for a source lacking ``device.json``.
 
+    Folders use their absolute path (unambiguous on one machine). For volumes,
     psutil exposes no portable hardware serial, so the volume label / mountpoint
     stands in: enough to avoid duplicate registrations on reconnect (FR-1.5).
     """
+    if detect_kind(volume) == DeviceKind.FOLDER:
+        return str(volume.resolve())
     return volume.name or str(volume).strip("\\/") or "recorder"
 
 
-def _default_device_name(serial: str) -> str:
+def _default_device_name(kind: DeviceKind, volume: Path, serial: str) -> str:
+    if kind == DeviceKind.FOLDER:
+        return f"Folder ({volume.resolve().name or serial})"
     return f"Recorder ({serial})"
 
 
@@ -223,6 +267,14 @@ def run_backup(
             st = src.stat()
         except OSError:
             report.errors += 1
+            continue
+
+        # Folder sources: a file still being written by a sync tool has a fresh
+        # mtime — leave it for a later poll once it has settled (ADR-0012). Future
+        # mtimes (device clock skew) count as settled, not perpetually in-flight.
+        age_s = time.time() - st.st_mtime
+        if device.kind == DeviceKind.FOLDER and 0 <= age_s < settings.backup.folder_settle_seconds:
+            report.skipped += 1
             continue
 
         # Capture timestamp falls back to the source mtime (FR-2.8); also part of the

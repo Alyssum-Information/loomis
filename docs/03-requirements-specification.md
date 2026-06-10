@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | Software Requirements Specification (SRS) |
 | **Doc ID** | LM-03 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [02 User Flows](02-user-flows.md), [04 Architecture](04-system-architecture.md), [features/](features/) |
 | **Traces** | Defines FR-1 … FR-9, NFR-1 … NFR-11 |
 
@@ -18,8 +18,13 @@ it. Priority uses [MoSCoW](https://en.wikipedia.org/wiki/MoSCoW_method): **M**us
 
 ## 1. Functional requirements
 
-### FR-1 Device detection & registration
+### FR-1 Source detection & registration
 *Spec: [features/01](features/01-device-registration-and-backup.md)*
+
+A **source** is anywhere recordings arrive from: a USB recorder volume, or a
+local **folder** that some other tool keeps filled (phone sync via
+Syncthing/OneDrive/iCloud, a lifelogger's companion app, manual drops). Both
+kinds register into the same `devices` table and feed the same safety spine.
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -33,6 +38,9 @@ it. Priority uses [MoSCoW](https://en.wikipedia.org/wiki/MoSCoW_method): **M**us
 | FR-1.8 | Support multiple registered devices. | S |
 | FR-1.9 | Auto-backup and the processing pipeline run **only for registered devices**; an unregistered connected volume raises a prompt but is never imported automatically. | M |
 | FR-1.10 | Unregister a device: remove its `device.json` (when reachable) and deactivate it so auto-backup stops. Imported recordings are retained. | S |
+| FR-1.11 | Register a local **folder** as an ingest source (e.g. a phone-sync or lifelogger drop folder), with the same per-source settings as a device. | M |
+| FR-1.12 | Poll registered folder sources for new audio and import it under the same ledger/safety spine as device backups. | M |
+| FR-1.13 | Folder sources never delete source files by default; deletion is per-source opt-in exactly like devices (gated by FR-2.5). | M |
 
 ### FR-2 Backup & ingest
 *Spec: [features/01](features/01-device-registration-and-backup.md)*
@@ -81,6 +89,7 @@ it. Priority uses [MoSCoW](https://en.wikipedia.org/wiki/MoSCoW_method): **M**us
 | FR-5.5 | Let the user name, confirm, correct, merge, and split speaker identities. | M |
 | FR-5.6 | Use user corrections to improve future matching. | S |
 | FR-5.7 | Support enrolling a known voice from a labeled sample. | C |
+| FR-5.8 | Suggest display names for unnamed speakers from conversational evidence (being addressed by name, self-introductions) during summarization; suggestions become canonical only after user confirmation. | S |
 
 ### FR-6 Summarization & organization
 *Spec: [features/05](features/05-summarization-and-organization.md)*

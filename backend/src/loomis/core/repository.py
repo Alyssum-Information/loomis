@@ -20,16 +20,18 @@ from .models import (
     JobStatus,
     JobType,
     Meeting,
+    PipelineStage,
     Quarantine,
     Recording,
     RecordingKind,
     RecordingStatus,
+    RecordPipeline,
     Segment,
     Speaker,
+    StageState,
     Transcript,
 )
-from .schemas import PipelineStage, RecordPipeline, StageState
-from .speakerid import Vector, blob_to_vec, centroid, vec_to_blob
+from .vectors import Vector, blob_to_vec, centroid, vec_to_blob
 
 
 class SearchRow(TypedDict):
@@ -65,13 +67,15 @@ def insert_device(conn: sqlite3.Connection, device: Device) -> None:
     conn.execute(
         """
         INSERT INTO devices
-            (id, name, volume_serial, owner_speaker_id, audio_globs, auto_delete,
-             transcode_policy, transcode_opts, min_free_bytes, registered)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, kind, name, source_path, volume_serial, owner_speaker_id, audio_globs,
+             auto_delete, transcode_policy, transcode_opts, min_free_bytes, registered)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             device.id,
+            device.kind.value,
             device.name,
+            device.source_path,
             device.volume_serial,
             device.owner_speaker_id,
             json.dumps(device.audio_globs),
@@ -82,6 +86,16 @@ def insert_device(conn: sqlite3.Connection, device: Device) -> None:
             int(device.registered),
         ),
     )
+
+
+def list_folder_sources(conn: sqlite3.Connection) -> list[Device]:
+    """Registered watched-folder sources, the daemon's poll targets (FR-1.12)."""
+    rows = conn.execute(
+        "SELECT * FROM devices "
+        "WHERE kind = 'folder' AND registered = 1 AND source_path IS NOT NULL "
+        "ORDER BY name"
+    ).fetchall()
+    return [Device.from_row(r) for r in rows]
 
 
 def set_device_registered(conn: sqlite3.Connection, device_id: str, registered: bool) -> None:
@@ -705,7 +719,9 @@ def update_speaker(
     sets: list[str] = ["updated_at = datetime('now')"]
     params: list[object] = []
     if display_name is not None:
+        # A user-set name supersedes any pending LLM suggestion (FR-5.8).
         sets.append("display_name = ?")
+        sets.append("suggested_name = NULL")
         params.append(display_name)
     if is_provisional is not None:
         sets.append("is_provisional = ?")
@@ -716,6 +732,22 @@ def update_speaker(
         params,
     )
     return find_speaker(conn, speaker_id)
+
+
+def suggest_speaker_name(conn: sqlite3.Connection, speaker_id: int, name: str) -> bool:
+    """Attach an LLM-proposed name to a still-unnamed speaker (FR-5.8).
+
+    Only applies while ``display_name`` is NULL — a user-chosen name always wins —
+    and flags the identity for review so the UI surfaces it. Returns whether a row
+    changed (idempotent: re-suggesting the same name is a no-op for callers).
+    """
+    cur = conn.execute(
+        "UPDATE speakers SET suggested_name = ?, needs_review = 1, "
+        "updated_at = datetime('now') "
+        "WHERE id = ? AND display_name IS NULL",
+        (name, speaker_id),
+    )
+    return cur.rowcount > 0
 
 
 def reassign_speaker(conn: sqlite3.Connection, source_id: int, target_id: int) -> None:
@@ -805,13 +837,9 @@ def _reduce_stage(jobs: list[Job]) -> PipelineStage:
     """
     if not jobs:
         return PipelineStage(state=StageState.PENDING)
-    blocking = next(
-        (j for j in jobs if j.status in (JobStatus.FAILED, JobStatus.PARKED)), None
-    )
+    blocking = next((j for j in jobs if j.status in (JobStatus.FAILED, JobStatus.PARKED)), None)
     if blocking is not None:
-        return PipelineStage(
-            state=StageState.FAILED, job_id=blocking.id, error=blocking.last_error
-        )
+        return PipelineStage(state=StageState.FAILED, job_id=blocking.id, error=blocking.last_error)
     if any(j.status == JobStatus.RUNNING for j in jobs):
         return PipelineStage(state=StageState.ACTIVE)
     if all(j.status == JobStatus.DONE for j in jobs):

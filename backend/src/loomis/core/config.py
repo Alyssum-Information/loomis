@@ -61,9 +61,13 @@ _DEFAULT_AUDIO_GLOBS = ["**/*.wav", "**/*.mp3", "**/*.m4a", "**/*.flac", "**/*.o
 
 
 class BackupSettings(BaseModel):
-    """Device-watch + safety-spine import policy (see docs/features/01)."""
+    """Source-watch + safety-spine import policy (see docs/features/01)."""
 
-    poll_interval_s: float = 3.0
+    poll_interval_s: float = 3.0  # USB volume poll cadence
+    folder_poll_interval_s: float = 60.0  # watched-folder scan cadence (FR-1.12)
+    # Import a folder file only once its mtime has been quiet this long, so a sync
+    # tool's in-flight write is never half-imported (ADR-0012).
+    folder_settle_seconds: float = 10.0
     staging_dir: str = "staging"  # relative to data_dir
     verify_hash: Literal["sha256"] = "sha256"  # integrity gate; only sha256 is supported
     auto_delete_after_backup: bool = False  # global default; device.json may override

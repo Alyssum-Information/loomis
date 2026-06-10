@@ -24,6 +24,13 @@ class TranscodePolicy(StrEnum):
     TRANSCODE_ONLY = "transcode_only"
 
 
+class DeviceKind(StrEnum):
+    """What kind of source a ``devices`` row is (FR-1.11, ADR-0012)."""
+
+    USB = "usb"  # removable volume; imported on connect
+    FOLDER = "folder"  # watched local folder; imported by periodic poll
+
+
 class RecordingStatus(StrEnum):
     IMPORTED = "imported"
     PROCESSING = "processing"
@@ -67,8 +74,12 @@ def _loads(value: Any, default: Any) -> Any:
 
 
 class Device(BaseModel):
+    """A registered source: a USB recorder volume or a watched folder (FR-1.11)."""
+
     id: str
     name: str
+    kind: DeviceKind = DeviceKind.USB
+    source_path: str | None = None  # folder sources: the watched folder's absolute path
     volume_serial: str | None = None
     owner_speaker_id: int | None = None
     audio_globs: list[str] = Field(default_factory=list)
@@ -169,6 +180,7 @@ class Speaker(BaseModel):
 
     id: int | None = None
     display_name: str | None = None
+    suggested_name: str | None = None  # LLM proposal (FR-5.8); user-confirmed into display_name
     is_provisional: bool = True
     needs_review: bool = False
     created_at: str | None = None
@@ -207,6 +219,17 @@ class ClassifyResult(BaseModel):
     reason: str = ""
 
 
+class SpeakerNameGuess(BaseModel):
+    """One LLM-inferred name for an unnamed transcript speaker (FR-5.8).
+
+    ``speaker`` is the transcript label exactly as prompted (``Speaker <id>``);
+    the pipeline maps it back to the speaker row.
+    """
+
+    speaker: str = ""
+    name: str = ""
+
+
 class DiaryDoc(BaseModel):
     """LLM output for a day's first-person diary entry (FR-6.2)."""
 
@@ -217,6 +240,7 @@ class DiaryDoc(BaseModel):
     todos: list[str] = Field(default_factory=list)
     decisions: list[str] = Field(default_factory=list)
     mentioned_people: list[str] = Field(default_factory=list)
+    speaker_names: list[SpeakerNameGuess] = Field(default_factory=list)
 
 
 class ActionItem(BaseModel):
@@ -234,6 +258,7 @@ class MeetingDoc(BaseModel):
     decisions: list[str] = Field(default_factory=list)
     action_items: list[ActionItem] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
+    speaker_names: list[SpeakerNameGuess] = Field(default_factory=list)
 
 
 # --- summarization: persisted row models ---
@@ -270,6 +295,51 @@ class Meeting(BaseModel):
         d = dict(row)
         d["metadata"] = _loads(d.get("metadata"), {})
         return cls.model_validate(d)
+
+
+# --- read models: a recording's progress through the pipeline (FR-7.6) ---
+
+
+class StageState(StrEnum):
+    """State of one pipeline stage for a file (derived from its jobs)."""
+
+    PENDING = "pending"  # not started
+    ACTIVE = "active"  # queued or running
+    DONE = "done"
+    FAILED = "failed"  # a job in this stage failed/parked
+
+
+class PipelineStage(BaseModel):
+    """One stage of a file's pipeline; ``job_id`` is the retryable job when failed."""
+
+    state: StageState
+    job_id: int | None = None
+    error: str | None = None
+
+
+class RecordPipeline(BaseModel):
+    """A recording tracked through its processing stages: backup → STT → summary (FR-7.6).
+
+    The Records screen renders one of these per recording. ``backup`` reflects the
+    safety-spine import (no job); ``stt`` covers transcript readiness (transcode/stt);
+    ``summary`` folds the post-transcript work (diarize/speaker_id/classify/
+    diary_aggregate/meeting_extract).
+    """
+
+    recording_id: str
+    name: str  # display label — basename of the source file
+    device_id: str
+    device_name: str | None = None
+    kind: RecordingKind | None = None
+    status: RecordingStatus
+    recorded_at: str | None = None
+    imported_at: str | None = None
+    duration_s: float | None = None
+    size_bytes: int = 0
+    backup: PipelineStage
+    stt: PipelineStage
+    summary: PipelineStage
+    updated_at: str | None = None
 
 
 class Quarantine(BaseModel):

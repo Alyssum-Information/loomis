@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from loomis import db
-from loomis.models import Device, Recording, RecordingStatus
+from loomis.core import db
+from loomis.core.models import Device, Recording, RecordingStatus
 
 
 def _fresh(tmp_path: Path) -> sqlite3.Connection:
