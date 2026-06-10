@@ -80,7 +80,7 @@ def test_backup_then_stt_persists_transcript(tmp_path: Path) -> None:
     backup.run_backup(conn, device, vol, settings)  # keep_original → enqueues stt
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 5  # stt → diarize → speaker_id → classify → diary_aggregate
+    assert processed == 4  # stt → diarize → speaker_id → classify (diary waits for settle)
 
     t = conn.execute("SELECT * FROM transcripts").fetchone()
     assert t is not None
@@ -119,7 +119,7 @@ def test_transcode_only_replaces_original_then_transcribes(
     backup.run_backup(conn, device, vol, settings)  # policy != keep_original → enqueues transcode
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 6  # transcode → stt → diarize → speaker_id → classify → diary_aggregate
+    assert processed == 5  # transcode → stt → diarize → speaker_id → classify
 
     rec = conn.execute("SELECT library_path, codec, status FROM recordings").fetchone()
     assert rec["codec"] == "opus"

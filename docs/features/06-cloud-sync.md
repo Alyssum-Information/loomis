@@ -48,9 +48,13 @@ streams `job.updated` / `cloud.synced` over the WebSocket. Each remote's run
 writes a `cloud_sync_log` row
 ([05 §4.14](../05-data-model-and-storage.md#414-cloud_sync_log)), listed at
 `GET /cloud/log` and shown on the Sources screen. The cron schedule
-(`[cloud].schedule_cron`) is consumed by the daemon Scheduler (separate M5
-work). The handler re-checks `[cloud].enabled` at execution time — a job
-enqueued before the user disables sync is refused, never run (NFR-1).
+(`[cloud].schedule_cron`, standard 5-field cron) is evaluated by the daemon
+Scheduler ([04 §3.1](../04-system-architecture.md#31-daemon-background-workers)):
+when due it enqueues the same `cloud_sync` job, skipping the tick if a push is
+already queued or running; restarts schedule from "now" (no catch-up runs —
+rclone copy is incremental, the next push covers downtime). The handler
+re-checks `[cloud].enabled` at execution time — a job enqueued before the user
+disables sync is refused, never run (NFR-1).
 
 ## 5. Privacy & credentials
 

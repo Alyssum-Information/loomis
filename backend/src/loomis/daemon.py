@@ -25,6 +25,7 @@ from .core.events import EventBus
 from .ingest import backup
 from .ingest.watcher import DeviceWatcher
 from .pipeline.runner import JobRunner
+from .scheduler import TICK_INTERVAL_S, Scheduler
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class Daemon:
         return self.settings.core.resolved_data_dir / "loomis.db"
 
     def start(self) -> None:
-        """Spawn the job-runner, volume-watcher, and folder-poll threads (idempotent)."""
+        """Spawn the runner, volume-watcher, folder-poll, and scheduler threads (idempotent)."""
         if self._threads:
             return
         self._stop.clear()
@@ -56,10 +57,11 @@ class Daemon:
             ),
             threading.Thread(target=self._watch_loop, name="daemon-watcher", daemon=True),
             threading.Thread(target=self._folder_loop, name="daemon-folders", daemon=True),
+            threading.Thread(target=self._scheduler_loop, name="daemon-scheduler", daemon=True),
         ]
         for t in self._threads:
             t.start()
-        log.info("daemon started (runner + watcher + folders)")
+        log.info("daemon started (runner + watcher + folders + scheduler)")
 
     def stop(self) -> None:
         """Signal threads to stop and wait for them to drain."""
@@ -108,6 +110,20 @@ class Daemon:
                             "imported %d new recording(s) from folder %s", report.imported, folder
                         )
                 self._stop.wait(self.settings.backup.folder_poll_interval_s)
+        finally:
+            conn.close()
+
+    def _scheduler_loop(self) -> None:
+        """Evaluate time-based triggers (diary debounce, cloud cron) on an interval."""
+        conn = db.connect(self._db_path)  # this thread's own connection
+        scheduler = Scheduler(self.settings, self.bus)
+        try:
+            while not self._stop.is_set():
+                try:
+                    scheduler.tick(conn)
+                except Exception:
+                    log.exception("scheduler tick failed; retrying next interval")
+                self._stop.wait(TICK_INTERVAL_S)
         finally:
             conn.close()
 

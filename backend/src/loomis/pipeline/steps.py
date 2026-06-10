@@ -283,15 +283,15 @@ def handle_classify(ctx: JobContext, job: Job) -> None:
             log.warning("classify LLM confirmation failed for %s; keeping heuristic", rec_id)
 
     kind = RecordingKind(result.type)
-    date = repository.recording_local_date(conn, rec_id)
     with transaction(conn):
         repository.set_recording_kind(conn, rec_id, kind)
         if kind == RecordingKind.MEETING:
             repository.enqueue_job(conn, JobType.MEETING_EXTRACT, {"recording_id": rec_id})
         else:
+            # Diary aggregation is NOT enqueued here: the scheduler aggregates the
+            # day once it settles (feature 05 §3), so a day filling up over hours
+            # costs one LLM pass instead of one per clip.
             repository.set_recording_status(conn, rec_id, RecordingStatus.DONE)
-            if date:
-                repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
 
 
 # Must match the unnamed-speaker fallback in repository.speaker_display_names,
@@ -379,9 +379,9 @@ def handle_meeting_extract(ctx: JobContext, job: Job) -> None:
             conn, meeting, recording_ids=[rec_id], participant_ids=participant_ids
         )
         _apply_speaker_suggestions(ctx, doc.speaker_names)
+        # The day's diary (which links this meeting) aggregates when the day
+        # settles — the scheduler enqueues it (feature 05 §3).
         repository.set_recording_status(conn, rec_id, RecordingStatus.DONE)
-        if date:
-            repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
 
 
 def handle_diary_aggregate(ctx: JobContext, job: Job) -> None:

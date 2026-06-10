@@ -811,6 +811,54 @@ def split_recording_to_speaker(
     )
 
 
+# --- scheduler queries (04 §3.1) ---
+
+
+def has_pending_job(
+    conn: sqlite3.Connection, job_type: JobType, payload: dict[str, object]
+) -> bool:
+    """True if an identical job is already queued or running (scheduler dedupe).
+
+    Payload comparison is on the exact JSON string — safe because every enqueue
+    site builds the payload dict the same way.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM jobs WHERE type = ? AND payload = ? AND status IN ('queued', 'running')",
+        (job_type.value, json.dumps(payload)),
+    ).fetchone()
+    return row is not None
+
+
+def due_diary_dates(conn: sqlite3.Connection, *, settle_minutes: int) -> list[str]:
+    """Days whose diary aggregation is due (feature 05 §3, the day-settled debounce).
+
+    A day is due when all three hold:
+    - every recording of that local day is terminal (none still importing/processing),
+    - the newest import is at least ``settle_minutes`` old (the quiet period), and
+    - the diary entry is missing or older than that newest import (late arrival).
+    """
+    rows = conn.execute(
+        f"""
+        WITH day AS (
+            SELECT {_LOCAL_DATE} AS d,
+                   MAX(imported_at) AS last_import,
+                   SUM(CASE WHEN status IN ('imported', 'processing') THEN 1 ELSE 0 END) AS busy
+            FROM recordings
+            WHERE kind IS NOT NULL
+            GROUP BY {_LOCAL_DATE}
+        )
+        SELECT day.d FROM day
+        LEFT JOIN diary_entries de ON de.date = day.d
+        WHERE day.busy = 0
+          AND day.last_import <= datetime('now', ?)
+          AND (de.id IS NULL OR de.updated_at < day.last_import)
+        ORDER BY day.d
+        """,  # noqa: S608 (_LOCAL_DATE is a literal)
+        (f"-{int(settle_minutes)} minutes",),
+    ).fetchall()
+    return [str(r["d"]) for r in rows if r["d"] is not None]
+
+
 # --- cloud sync log (FR-8.3) ---
 
 

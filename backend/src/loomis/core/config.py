@@ -137,7 +137,9 @@ class SummariesSettings(BaseModel):
     ambiguous_bias: str = "diary"  # tie-break: a stray meeting in the diary is cheaper
     solo_dominance: float = 0.85  # owner duration fraction above which multi-speaker → diary
     classify_confidence_floor: float = 0.6  # below this, ask the LLM to confirm
-    diary_day_settle_minutes: int = 30  # debounce window (not yet enforced; needs scheduler)
+    # Quiet period after a day's last import before its diary is aggregated; the
+    # daemon scheduler enforces this (one LLM pass per settled day, feature 05 §3).
+    diary_day_settle_minutes: int = 30
     summary_language: str = "auto"  # auto = follow the transcript's dominant language
 
 
