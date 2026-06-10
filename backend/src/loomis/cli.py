@@ -108,6 +108,7 @@ def _backup(args: argparse.Namespace) -> int:
 
 
 def _worker(args: argparse.Namespace) -> int:
+    import logging
     import threading
 
     from .core.logging_setup import configure_logging
@@ -134,18 +135,35 @@ def _worker(args: argparse.Namespace) -> int:
     finally:
         conn.close()
 
-    # Long-running mode: a bounded worker pool until Ctrl-C.
+    # Long-running mode: a bounded worker pool until Ctrl-C. The main thread doubles
+    # as the scheduler (diary day-settled debounce, cloud cron) so headless workers
+    # produce diaries too, not just the daemon (04 §3.1).
+    import time
+
+    from .scheduler import TICK_INTERVAL_S, Scheduler
+
     print("Job runner started - Ctrl-C to stop.")
     stop = threading.Event()
     pool = threading.Thread(target=runner.serve, args=(stop,), name="job-runner")
     pool.start()
+    scheduler = Scheduler(settings)
+    sched_conn = _open_db(settings)
+    next_tick = 0.0
     try:
         while pool.is_alive():
+            if time.monotonic() >= next_tick:
+                try:
+                    scheduler.tick(sched_conn)
+                except Exception:
+                    logging.getLogger(__name__).exception("scheduler tick failed")
+                next_tick = time.monotonic() + TICK_INTERVAL_S
             pool.join(0.5)
     except KeyboardInterrupt:
         print("\nStopping...")
         stop.set()
         pool.join()
+    finally:
+        sched_conn.close()
     return 0
 
 

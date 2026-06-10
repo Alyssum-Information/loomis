@@ -107,6 +107,9 @@ This closes the product-shape gaps found in the pre-1.0 design review.*
 
 ## Tracked open questions
 - Speaker merge/split UX details — FR-5.5
-- Diary "day-settled" debounce policy — [features/05](features/05-summarization-and-organization.md)
+- ~~Diary "day-settled" debounce policy~~ — **decided (M5)**: scheduler aggregates a
+  day once all its recordings are terminal and the newest import has been quiet for
+  `[summaries].diary_day_settle_minutes`; late clips re-open the day
+  ([features/05 §3](features/05-summarization-and-organization.md#3-diary-mode-fr-62-fr-65-fr-68))
 - Meeting grouping rule — [features/05](features/05-summarization-and-organization.md)
 - Vector search backend switch point (memory → sqlite-vec) — [ADR-0007](adr/0007-speaker-diarization-pyannote.md)

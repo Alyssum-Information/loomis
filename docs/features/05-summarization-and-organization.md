@@ -60,8 +60,14 @@ Scope: all *diary-type* recordings for one local calendar day.
 4. **Idempotent re-summary:** late clips re-trigger aggregation; prior version
    retained/diffable.
 
-**Day-settled debounce** (`[summaries].diary_day_settle_minutes`): summarize once
-a day looks complete (quiet timer after the last import), re-open on stragglers.
+**Day-settled debounce** (`[summaries].diary_day_settle_minutes`): the daemon
+**Scheduler** ([04 §3.1](../04-system-architecture.md#31-daemon-background-workers))
+aggregates a day once it has settled — every recording of the day is terminal
+and the newest import has been quiet for the configured window — so a day that
+fills up over hours costs **one** LLM pass, not one per clip. A late-arriving
+clip makes the entry stale and the next settled tick re-aggregates
+(idempotent). The classify/meeting steps therefore do *not* trigger aggregation
+themselves; manual `POST /diary/{date}/resummarize` bypasses the debounce.
 
 ## 4. Meeting mode (FR-6.3, FR-6.4, FR-6.6)
 

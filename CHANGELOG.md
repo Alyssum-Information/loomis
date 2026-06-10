@@ -7,6 +7,21 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **M5 scheduler** (04 §3.1): the daemon's third leg beside the watcher and job
+  runner, also run by headless `loomis worker`. Two time-based triggers, both of
+  which only enqueue durable jobs:
+  - **Diary day-settled debounce** (feature 05 §3): a day's diary is aggregated
+    once every recording of the day is terminal and the newest import has been
+    quiet for `[summaries].diary_day_settle_minutes` (now actually enforced) —
+    one LLM pass per settled day instead of one per clip. Late arrivals make
+    the entry stale and the next tick re-aggregates idempotently; pending-job
+    dedupe prevents double enqueues. The classify/meeting steps no longer
+    trigger aggregation directly; `POST /diary/{date}/resummarize` bypasses
+    the debounce.
+  - **Scheduled cloud sync** (FR-8.3): `[cloud].schedule_cron` (5-field cron,
+    via `croniter`) enqueues a `cloud_sync` push when due, skipping ticks while
+    a push is still queued/running; restarts schedule from "now" (no catch-up
+    runs — rclone copy is incremental).
 - **M5 cloud sync** (FR-8.1–8.4, ADR-0004): opt-in, push-only off-machine backup
   via rclone. Per-remote scopes — `audio` (library), `markdown` (diary +
   meetings), `db` (a consistent `VACUUM INTO` snapshot, never the live WAL

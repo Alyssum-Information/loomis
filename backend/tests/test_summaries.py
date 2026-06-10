@@ -31,6 +31,7 @@ from loomis.core.models import (
 from loomis.pipeline.classify import classify_segments
 from loomis.pipeline.llm import NullProvider, complete_structured, get_provider, model_id
 from loomis.pipeline.runner import JobRunner
+from loomis.scheduler import Scheduler
 
 _SUM = SummariesSettings()
 
@@ -95,6 +96,8 @@ def _settings(tmp_path: Path) -> Settings:
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),
         llm=LlmSettings(provider="null"),
+        # settle immediately so Scheduler.tick aggregates in the same test
+        summaries=SummariesSettings(diary_day_settle_minutes=0),
     )
 
 
@@ -141,7 +144,11 @@ def test_meeting_flow_creates_record_and_diary_link(tmp_path: Path) -> None:
     repository.enqueue_job(conn, JobType.CLASSIFY, {"recording_id": "rec-1"})
 
     processed = JobRunner(settings).drain(conn)
-    assert processed == 3  # classify → meeting_extract → diary_aggregate
+    assert processed == 2  # classify → meeting_extract (diary waits for the settled day)
+
+    # The scheduler aggregates the day once it has settled (feature 05 §3).
+    assert Scheduler(settings).tick(conn) == 1
+    assert JobRunner(settings).drain(conn) == 1  # diary_aggregate
 
     assert conn.execute("SELECT kind FROM recordings").fetchone()["kind"] == "meeting"
     assert conn.execute("SELECT status FROM recordings").fetchone()["status"] == "done"
@@ -165,6 +172,8 @@ def test_meeting_extract_rerun_is_idempotent(tmp_path: Path) -> None:
     conn = _conn(settings)
     _seed_meeting(conn, "rec-1", "2026-06-09T10:00:00+08:00")
     repository.enqueue_job(conn, JobType.CLASSIFY, {"recording_id": "rec-1"})
+    JobRunner(settings).drain(conn)
+    Scheduler(settings).tick(conn)
     JobRunner(settings).drain(conn)
 
     repository.enqueue_job(conn, JobType.MEETING_EXTRACT, {"recording_id": "rec-1"})
