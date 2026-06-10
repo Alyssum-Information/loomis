@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 from queue import Empty
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import (
     APIRouter,
@@ -32,7 +33,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..cloud.rclone import Rclone
 from ..core import db, repository
-from ..core.config import Settings
+from ..core.config import (
+    RESTART_REQUIRED_KEYS,
+    SECRET_MASK,
+    Settings,
+    apply_settings_patch,
+    config_file_for,
+    validate_settings_patch,
+)
 from ..core.events import EventBus
 from ..core.models import (
     CloudSyncEntry,
@@ -53,6 +61,7 @@ from .schemas import (
     CloudSyncRequest,
     DeviceRegister,
     DeviceUpdate,
+    EgressStatus,
     JobAccepted,
     Page,
     PendingDevice,
@@ -60,6 +69,8 @@ from .schemas import (
     RetranscribeRequest,
     RetryResult,
     SearchHit,
+    SettingsEnvelope,
+    SettingsPatchResult,
     SpeakerMerge,
     SpeakerSplit,
     SpeakerUpdate,
@@ -401,6 +412,79 @@ def resummarize_diary(date: str, conn: Conn) -> JobAccepted:
     return JobAccepted(job_id=job_id)
 
 
+# --- settings (3.5, FR-7.7/7.8) ---
+
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_LOCAL_LLM_PROVIDERS = {"ollama", "null"}
+
+
+def get_bus(request: Request) -> EventBus:
+    return request.app.state.bus  # type: ignore[no-any-return]
+
+
+Bus = Annotated[EventBus, Depends(get_bus)]
+
+
+def _egress_status(settings: Settings) -> EgressStatus:
+    return EgressStatus(
+        cloud_sync=settings.cloud.enabled,
+        cloud_llm=settings.llm.provider not in _LOCAL_LLM_PROVIDERS,
+        lan_bind=settings.api.host not in _LOCAL_HOSTS,
+    )
+
+
+def _curated_settings(settings: Settings) -> dict[str, Any]:
+    """The config as shown to the UI: secrets removed or masked (NFR-9)."""
+    data = settings.model_dump(mode="json")
+    data["api"].pop("token", None)
+    data["diarize"]["hf_token"] = SECRET_MASK if settings.diarize.hf_token else ""
+    return data
+
+
+@router.get("/settings", response_model=SettingsEnvelope)
+def get_app_config(settings: AppSettings) -> SettingsEnvelope:
+    """Current configuration + egress state (FR-7.7). Secrets never leave masked."""
+    return SettingsEnvelope(
+        settings=_curated_settings(settings),
+        egress=_egress_status(settings),
+        config_path=str(config_file_for(settings)),
+    )
+
+
+@router.patch("/settings", response_model=SettingsPatchResult)
+def patch_app_config(
+    body: dict[str, dict[str, Any]], settings: AppSettings, bus: Bus
+) -> SettingsPatchResult:
+    """Update settings (FR-7.7): validate -> persist to config.toml -> apply live.
+
+    Changes that newly cross the privacy boundary (enabling cloud sync, a cloud
+    LLM, or a LAN bind) are reported in ``egress_pending`` and pushed as
+    ``egress.pending`` events so the UI flags them (FR-7.8). Env overrides keep
+    precedence over the file on the next full reload (06 §1).
+    """
+    before = _egress_status(settings)
+    try:
+        applied = validate_settings_patch(settings, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    apply_settings_patch(settings, body)
+
+    after = _egress_status(settings)
+    pending = [
+        kind
+        for kind in ("cloud_sync", "cloud_llm", "lan_bind")
+        if getattr(after, kind) and not getattr(before, kind)
+    ]
+    for kind in pending:
+        bus.publish("egress.pending", {"kind": kind, "detail": "enabled via settings"})
+    return SettingsPatchResult(
+        applied=applied,
+        restart_required=any(key in RESTART_REQUIRED_KEYS for key in applied),
+        egress_pending=pending,
+        egress=after,
+    )
+
+
 # --- cloud sync (3.5, FR-8) ---
 
 
@@ -465,6 +549,18 @@ async def ws(websocket: WebSocket) -> None:
     threads, so we pull it off-loop via ``to_thread`` with a short timeout; the
     timeout also lets us notice a client that has gone away.
     """
+    # HTTP middleware does not cover WebSockets: enforce the token here too
+    # (11 §2). Browsers can't set headers on WS, so a ?token= query also works.
+    settings: Settings = websocket.app.state.settings
+    if settings.api.token:
+        supplied = websocket.query_params.get("token", "")
+        header = websocket.headers.get("authorization", "")
+        if header.startswith("Bearer "):
+            supplied = header.removeprefix("Bearer ")
+        if not secrets.compare_digest(supplied, settings.api.token):
+            await websocket.close(code=4401, reason="missing or invalid API token")
+            return
+
     bus: EventBus = websocket.app.state.bus
     await websocket.accept()
     queue = bus.subscribe()

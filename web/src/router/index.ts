@@ -18,6 +18,7 @@ const router = createRouter({
     { path: '/meetings/:id', name: 'meeting', component: () => import('@/pages/Meeting.vue') },
     { path: '/speakers', name: 'speakers', component: () => import('@/pages/Speakers.vue') },
     { path: '/records', name: 'records', component: () => import('@/pages/Records.vue') },
+    { path: '/settings', name: 'settings', component: () => import('@/pages/Settings.vue') },
   ],
 })
 

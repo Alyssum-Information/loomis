@@ -25,6 +25,14 @@ Defaults are **local-first**: a fresh config performs no network egress.
 
 `environment variables` > `config.toml` > `built-in defaults`.
 
+The web UI's Settings screen edits the same `config.toml` through
+`PATCH /settings` ([11 §3.5](11-api-specification.md#35-search-jobs-settings-cloud)):
+changes are validated, written to the file, and applied to the running process
+(a few keys — bind address/port, worker pool size — need a restart, which the
+UI says). Environment variables still win on the next full reload. Secrets
+(`api.token`) are env-only and never pass through the API; `diarize.hf_token`
+is shown masked.
+
 ## 2. Reference
 
 ```toml

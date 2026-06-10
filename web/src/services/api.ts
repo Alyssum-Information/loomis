@@ -306,6 +306,35 @@ export function splitSpeaker (id: number, recordingId: string): Promise<JobAccep
   return sendJson<JobAccepted>('POST', `/speakers/${id}/split`, { recording_id: recordingId })
 }
 
+// --- settings (FR-7.7/7.8) ---
+
+export interface EgressStatus {
+  cloud_sync: boolean
+  cloud_llm: boolean
+  lan_bind: boolean
+}
+
+export interface SettingsEnvelope {
+  settings: Record<string, Record<string, unknown>>
+  egress: EgressStatus
+  config_path: string
+}
+
+export interface SettingsPatchResult {
+  applied: string[]
+  restart_required: boolean
+  egress_pending: string[]
+  egress: EgressStatus
+}
+
+export const getSettings = (): Promise<SettingsEnvelope> => getJson<SettingsEnvelope>('/settings')
+
+export function patchSettings (
+  patch: Record<string, Record<string, unknown>>,
+): Promise<SettingsPatchResult> {
+  return sendJson<SettingsPatchResult>('PATCH', '/settings', patch)
+}
+
 // --- cloud sync (FR-8) ---
 
 export interface CloudRemote {

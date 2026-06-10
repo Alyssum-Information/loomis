@@ -7,6 +7,20 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **M5 settings & egress** (FR-7.7/7.8): `GET /settings` returns the curated
+  config (api token removed, `hf_token` masked) plus the current egress state;
+  `PATCH /settings` validates a partial update, persists it to `config.toml`
+  (env vars keep precedence), and applies it to the running process — flagging
+  keys that need a restart. Changes that newly cross the privacy boundary
+  (enabling cloud sync, a cloud LLM, a LAN bind) come back as `egress_pending`
+  and are pushed as `egress.pending` WebSocket events; cloud pushes emit
+  `egress.started`. New **Settings** screen (transcription language/model,
+  HF token, LLM model, summary language, settle window, transcode policy/
+  bitrate, cloud schedule) with an explicit consent dialog before enabling
+  cloud sync, and a persistent app-bar **egress chip** whenever any configured
+  feature can send data off-machine. **LAN hardening** (11 §2): a non-loopback
+  bind without `LOOMIS_API__TOKEN` refuses to start, and a configured token is
+  enforced (Bearer, constant-time) on the whole API. New runtime dep `tomli-w`.
 - **M5 scheduler** (04 §3.1): the daemon's third leg beside the watcher and job
   runner, also run by headless `loomis worker`. Two time-based triggers, both of
   which only enqueue durable jobs:
