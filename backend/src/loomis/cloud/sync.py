@@ -90,6 +90,9 @@ def handle_cloud_sync(ctx: JobContext, job: Job) -> None:
     if not remotes:
         raise PermanentJobError(f"no matching cloud remote configured: {wanted!r}")
     for remote in remotes:
+        if ctx.bus is not None:
+            # The UI's egress indicator: data is about to leave the machine (FR-7.8).
+            ctx.bus.publish("egress.started", {"kind": "cloud_sync", "detail": remote.name})
         sync_remote(ctx.conn, ctx.settings, remote)
         if ctx.bus is not None:
             ctx.bus.publish("cloud.synced", {"remote": remote.name})

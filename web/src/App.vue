@@ -47,6 +47,20 @@
       </div>
 
       <v-spacer />
+
+      <!-- The mandatory egress indicator (FR-7.8): visible whenever any configured
+           feature can send data off this machine. -->
+      <v-chip
+        v-if="egressKinds.length > 0"
+        class="mr-2"
+        color="warning"
+        label
+        prepend-icon="mdi-cloud-upload-outline"
+        size="small"
+        to="/settings"
+      >
+        egress: {{ egressKinds.join(', ') }}
+      </v-chip>
     </v-app-bar>
 
     <v-navigation-drawer v-model="drawer">
@@ -103,7 +117,14 @@
 <script lang="ts" setup>
   import { computed, onMounted, ref } from 'vue'
   import { useRouter } from 'vue-router'
-  import { type Job, listJobs, search, type SearchHit } from '@/services/api'
+  import {
+    type EgressStatus,
+    getSettings,
+    type Job,
+    listJobs,
+    search,
+    type SearchHit,
+  } from '@/services/api'
   import { useEventsStore } from '@/stores/events'
   import { useHealthStore } from '@/stores/health'
 
@@ -147,7 +168,24 @@
     { title: 'Timeline', icon: 'mdi-timeline-clock', to: '/timeline' },
     { title: 'Speakers', icon: 'mdi-account-voice', to: '/speakers' },
     { title: 'Records', icon: 'mdi-cog-sync', to: '/records' },
+    { title: 'Settings', icon: 'mdi-cog', to: '/settings' },
   ]
+
+  // Egress indicator (FR-7.8): which features can currently send data off-machine.
+  const egress = ref<EgressStatus | null>(null)
+
+  const egressKinds = computed(() => {
+    if (!egress.value) return []
+    return Object.entries(egress.value)
+      .filter(([, on]) => on)
+      .map(([kind]) => kind.replace('_', ' '))
+  })
+
+  async function refreshEgress (): Promise<void> {
+    try {
+      egress.value = (await getSettings()).egress
+    } catch { /* indicator is best-effort */ }
+  }
 
   async function run (): Promise<void> {
     const term = q.value.trim()
@@ -190,10 +228,14 @@
   onMounted(() => {
     health.refresh()
     refreshJobs()
+    refreshEgress()
     events.connect()
     events.on(event => {
       if (event.type === 'job.updated' || event.type === 'recording.added') {
         refreshJobs()
+      }
+      if (event.type === 'egress.pending' || event.type === 'egress.started') {
+        refreshEgress()
       }
       if (event.type === 'device.connected' && event.data.registered === false) {
         newDevice.value = true

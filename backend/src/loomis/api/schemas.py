@@ -7,6 +7,8 @@ from ``models.py`` so the wire contract can evolve without touching storage type
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 # Pipeline read models are part of the wire contract; they live in core so the
@@ -104,6 +106,35 @@ class SpeakerMerge(BaseModel):
 
 class SpeakerSplit(BaseModel):
     recording_id: str  # the recording to peel off; the speaker is the path id
+
+
+class EgressStatus(BaseModel):
+    """Which configured features cross the privacy boundary right now (FR-7.8)."""
+
+    cloud_sync: bool
+    cloud_llm: bool
+    lan_bind: bool
+
+    @property
+    def any(self) -> bool:
+        return self.cloud_sync or self.cloud_llm or self.lan_bind
+
+
+class SettingsEnvelope(BaseModel):
+    """``GET /settings``: curated config (secrets masked) + egress state (FR-7.7/7.8)."""
+
+    settings: dict[str, Any]
+    egress: EgressStatus
+    config_path: str
+
+
+class SettingsPatchResult(BaseModel):
+    """``PATCH /settings`` outcome: what changed, what it implies."""
+
+    applied: list[str]  # "section.key" entries actually changed
+    restart_required: bool  # a changed key only takes effect after restart
+    egress_pending: list[str]  # egress kinds this patch just enabled (FR-7.8)
+    egress: EgressStatus
 
 
 class CloudRemoteOut(BaseModel):

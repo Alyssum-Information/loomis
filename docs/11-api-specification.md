@@ -35,9 +35,12 @@ a typed client.
 
 - Default bind `127.0.0.1` (single-user, same machine) — no auth required by
   default.
-- Binding to the LAN (`[api].host = "0.0.0.0"`) is opt-in and, when enabled,
-  **requires a local API token** (sent as `Authorization: Bearer <token>`) and
-  is flagged in the UI. CORS allows only the configured frontend origin (the
+- Binding to the LAN (`[api].host = "0.0.0.0"`) is opt-in and **requires a
+  local API token**: startup is refused for a non-loopback bind without
+  `LOOMIS_API__TOKEN`, and once a token is set every `/api` request must carry
+  `Authorization: Bearer <token>` (constant-time compared; 401 with the
+  standard error envelope otherwise). The LAN bind is flagged in the UI as
+  egress (`lan_bind`). CORS allows only the configured frontend origin (the
   Vite dev origin in development). See
   [09 Security & Privacy](09-security-and-privacy-model.md).
 
@@ -88,7 +91,8 @@ a typed client.
 | GET | `/jobs` | queued/running/failed steps (raw) | FR-7.6 |
 | POST | `/jobs/{id}/retry` | retry a failed step | FR-7.6 |
 | POST | `/jobs/retry-all` | requeue every failed/parked step | FR-7.6 |
-| GET | `/settings` / PATCH `/settings` | read/update config (egress-flagged) | FR-7.7/7.8 |
+| GET | `/settings` | curated config (secrets removed/masked) + current egress state + config path | FR-7.7/7.8 |
+| PATCH | `/settings` | partial update: validate → persist to `config.toml` → apply live; response lists applied keys, `restart_required`, and `egress_pending` kinds | FR-7.7/7.8 |
 | GET | `/cloud/remotes` | cloud status: enabled flag, rclone availability, configured remotes | FR-8.2 |
 | POST | `/cloud/sync` | trigger a push (→ job); body `{remote?}` limits to one remote; `409` while `[cloud].enabled` is false | FR-8.3 |
 | GET | `/cloud/log` | sync history (per-remote result + stats), newest first | FR-8.3 |
@@ -106,7 +110,8 @@ A single channel pushes events so the UI reflects backend state without polling
 { "type": "diary.updated",   "data": { "date" } }
 { "type": "speaker.updated", "data": { "speaker_id" } }
 { "type": "cloud.synced",    "data": { "remote" } }
-{ "type": "egress.pending",  "data": { "kind": "cloud_sync|cloud_llm", "detail" } }
+{ "type": "egress.pending",  "data": { "kind": "cloud_sync|cloud_llm|lan_bind", "detail" } }
+{ "type": "egress.started",  "data": { "kind": "cloud_sync", "detail": "<remote>" } }
 ```
 
 The `egress.pending` / `egress.started` events back the UI's mandatory egress

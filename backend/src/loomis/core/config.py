@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -233,3 +233,121 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Load settings fresh (cheap; call once at startup and store on app state)."""
     return Settings()
+
+
+# --- runtime settings editing (FR-7.7) ---
+
+# Sections the API may edit. Anything else in a patch is rejected.
+EDITABLE_SECTIONS = frozenset(
+    {
+        "core",
+        "api",
+        "backup",
+        "stt",
+        "diarize",
+        "speaker_id",
+        "llm",
+        "summaries",
+        "transcode",
+        "jobs",
+        "cloud",
+    }
+)
+
+# Per-section keys that must never pass through the API. api.token is env-only by
+# design (11 §2); run_daemon is a deployment/test switch, not a user setting.
+BLOCKED_KEYS: dict[str, frozenset[str]] = {
+    "api": frozenset({"token", "run_daemon"}),
+}
+
+# Changes to these need a process restart to take effect (bind address, thread
+# pool size, …); the PATCH response flags them so the UI can say so.
+RESTART_REQUIRED_KEYS = frozenset(
+    {
+        "core.data_dir",
+        "api.host",
+        "api.port",
+        "api.serve_spa",
+        "api.open_browser",
+        "api.cors_origins",
+        "jobs.concurrency",
+    }
+)
+
+SECRET_MASK = "********"  # noqa: S105 (a display placeholder, not a credential)
+
+
+def config_file_for(settings: Settings) -> Path:
+    """Where settings edits persist: ``LOOMIS_CONFIG``, else ``<data_dir>/config.toml``.
+
+    Derived from the *live* settings (not raw env) so tests and embedded use write
+    where the data actually lives.
+    """
+    override = os.environ.get("LOOMIS_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    return settings.core.resolved_data_dir / "config.toml"
+
+
+def validate_settings_patch(settings: Settings, patch: dict[str, Any]) -> list[str]:
+    """Check a partial settings update; returns the list of ``section.key`` changed.
+
+    Raises ``ValueError`` for unknown sections/keys, blocked keys, or values the
+    section model rejects. Masked secret values are treated as "unchanged" and
+    dropped from the patch (mutates ``patch``).
+    """
+    changed: list[str] = []
+    for section, values in list(patch.items()):
+        if section not in EDITABLE_SECTIONS:
+            raise ValueError(f"unknown settings section: {section!r}")
+        if not isinstance(values, dict):
+            raise ValueError(f"section {section!r} must be an object")
+        current = getattr(settings, section)
+        for key, value in list(values.items()):
+            if key not in type(current).model_fields:
+                raise ValueError(f"unknown setting: {section}.{key}")
+            if key in BLOCKED_KEYS.get(section, frozenset()):
+                raise ValueError(f"setting {section}.{key} cannot be changed via the API")
+            if value == SECRET_MASK:  # the UI echoed a masked secret back: no change
+                del values[key]
+                continue
+            changed.append(f"{section}.{key}")
+        # Validate the merged section so bad values fail before anything persists.
+        merged = {**current.model_dump(mode="json"), **values}
+        try:
+            type(current).model_validate(merged)
+        except ValidationError as exc:
+            first = exc.errors()[0]
+            loc = ".".join(str(part) for part in first["loc"])
+            raise ValueError(f"invalid value for {section}.{loc}: {first['msg']}") from exc
+        if not values:
+            del patch[section]
+    return changed
+
+
+def apply_settings_patch(settings: Settings, patch: dict[str, Any]) -> None:
+    """Persist a validated patch to ``config.toml`` and apply it to the live object.
+
+    File write first (durable), then in-place section replacement — every holder
+    of the root ``Settings`` (daemon, runner, scheduler, request handlers) sees
+    the new values immediately. Env overrides still win on the next full reload,
+    matching the documented precedence (06 §1).
+    """
+    import tomllib
+
+    import tomli_w
+
+    path = config_file_for(settings)
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        existing = tomllib.loads(path.read_text(encoding="utf-8"))
+    for section, values in patch.items():
+        existing.setdefault(section, {})
+        existing[section].update(values)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomli_w.dumps(existing), encoding="utf-8")
+
+    for section, values in patch.items():
+        current = getattr(settings, section)
+        merged = {**current.model_dump(mode="json"), **values}
+        setattr(settings, section, type(current).model_validate(merged))

@@ -7,12 +7,15 @@ migrations, and (unless disabled) starts the in-process background daemon.
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
@@ -30,10 +33,21 @@ API_PREFIX = "/api/v1"
 _SPA_DIST = Path(__file__).resolve().parents[4] / "web" / "dist"
 
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
     configure_logging(settings.core.log_level)
+
+    # LAN exposure requires a token (11 §2): refuse a non-loopback bind without
+    # one rather than silently serving the lifelog to the network.
+    if settings.api.host not in _LOOPBACK_HOSTS and not settings.api.token:
+        raise RuntimeError(
+            f"[api].host = {settings.api.host!r} exposes Loomis beyond this machine; "
+            "set LOOMIS_API__TOKEN (or bind to 127.0.0.1)"
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -68,6 +82,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    if settings.api.token:
+        # Bearer auth on the whole API surface once a token is configured (11 §2).
+        expected = f"Bearer {settings.api.token}"
+
+        @app.middleware("http")
+        async def require_token(request: Request, call_next: Any) -> Any:
+            if request.url.path.startswith(API_PREFIX) and not secrets.compare_digest(
+                request.headers.get("authorization", ""), expected
+            ):
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": {"code": 401, "message": "missing or invalid API token"}},
+                )
+            return await call_next(request)
 
     @app.get(f"{API_PREFIX}/health")
     def health() -> dict[str, object]:

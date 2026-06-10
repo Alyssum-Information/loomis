@@ -19,6 +19,7 @@ dependencies = [
   "pydantic-settings>=2.3",
   "psutil>=5.9",          # removable-volume detection (ADR-0011)
   "croniter>=2.0",        # [cloud].schedule_cron parsing (feature 06 §4)
+  "tomli-w>=1.0",         # write settings edits back to config.toml (FR-7.7)
 ]
 
 [project.optional-dependencies]
