@@ -58,6 +58,15 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   modules are importable.
 
 ### Fixed
+- **Recording playback for recorder codecs** (FR-7.3): many voice recorders write
+  ADPCM/A-law inside `.wav`, which no browser can decode — the Recording page's
+  player silently failed. `GET /recordings/{id}/audio` now probes the codec and,
+  when the browser can't play it, decodes the file once (near-instant) into a
+  PCM preview under `<data_dir>/cache/preview/` and serves that, keeping HTTP
+  Range (seeking) intact. Explicit `audio/*` content types per extension.
+- **Transcript follows playback** (FR-7.3): the Recording page highlights the
+  line under the playhead, auto-scrolls to keep it visible, and every line gets
+  a play/pause button that seeks to its timestamp (clicking the row still seeks).
 - **speaker_id no longer needs torchcodec**: the pyannote embedder now decodes audio
   with whisperx's ffmpeg CLI and hands pyannote an in-memory `{waveform, sample_rate}`
   dict instead of a file path. File-path decoding routed through torchcodec, whose

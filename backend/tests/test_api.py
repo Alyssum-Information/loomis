@@ -20,6 +20,7 @@ from loomis.core.models import (
     Segment,
     Transcript,
 )
+from loomis.pipeline.transcode import TranscodeError, Transcoder
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -139,7 +140,9 @@ def test_recordings_filter_by_status(client: TestClient) -> None:
     assert [r["id"] for r in items] == ["rec-2"]
 
 
-def test_transcript_and_audio(client: TestClient) -> None:
+def test_transcript_and_audio(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    # PCM WAV is browser-decodable → the library file is served as-is.
+    monkeypatch.setattr(Transcoder, "probe_codec", lambda self, path: "pcm_s16le")
     detail = client.get("/api/v1/recordings/rec-1/transcript").json()
     assert detail["transcript"]["recording_id"] == "rec-1"
     assert detail["segments"][0]["text"] == "hello"
@@ -147,9 +150,52 @@ def test_transcript_and_audio(client: TestClient) -> None:
     audio = client.get("/api/v1/recordings/rec-1/audio")
     assert audio.status_code == 200
     assert audio.content == b"RIFFfake-wav-bytes"
+    assert audio.headers["content-type"].startswith("audio/wav")
 
     # rec-2 has no library file → 404
     assert client.get("/api/v1/recordings/rec-2/audio").status_code == 404
+
+
+def test_audio_unplayable_wav_served_from_pcm_preview(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Recorder ADPCM WAV → decoded once into the preview cache and served from there.
+    monkeypatch.setattr(Transcoder, "probe_codec", lambda self, path: "adpcm_ima_wav")
+
+    def fake_pcm(self: Transcoder, src: Path, dst: Path) -> None:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(b"RIFFpcm-preview-bytes")
+
+    monkeypatch.setattr(Transcoder, "to_pcm_wav", fake_pcm)
+
+    audio = client.get("/api/v1/recordings/rec-1/audio")
+    assert audio.status_code == 200
+    assert audio.content == b"RIFFpcm-preview-bytes"
+
+    preview = _settings(tmp_path).core.resolved_data_dir / "cache" / "preview" / "rec-1.wav"
+    assert preview.is_file()
+
+    # Second request reuses the cached preview without re-probing or re-transcoding.
+    def boom(self: Transcoder, *args: object) -> None:
+        raise AssertionError("cache should be reused")
+
+    monkeypatch.setattr(Transcoder, "probe_codec", boom)
+    monkeypatch.setattr(Transcoder, "to_pcm_wav", boom)
+    assert client.get("/api/v1/recordings/rec-1/audio").content == b"RIFFpcm-preview-bytes"
+
+
+def test_audio_transcode_failure_falls_back_to_original(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(Transcoder, "probe_codec", lambda self, path: "adpcm_ima_wav")
+
+    def boom(self: Transcoder, src: Path, dst: Path) -> None:
+        raise TranscodeError("no ffmpeg")
+
+    monkeypatch.setattr(Transcoder, "to_pcm_wav", boom)
+    audio = client.get("/api/v1/recordings/rec-1/audio")
+    assert audio.status_code == 200
+    assert audio.content == b"RIFFfake-wav-bytes"  # best effort: original served
 
 
 def test_timeline_diary_meeting(client: TestClient) -> None:

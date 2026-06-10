@@ -59,7 +59,7 @@ a typed client.
 | GET | `/recordings` | list/filter (by device, date, status) |
 | GET | `/recordings/{id}` | recording detail + status |
 | GET | `/recordings/{id}/transcript` | segments (speaker-labeled, timestamped) |
-| GET | `/recordings/{id}/audio` | stream audio (range requests) for the player |
+| GET | `/recordings/{id}/audio` | stream playable audio (range requests) for the player; recorder codecs browsers can't decode (e.g. ADPCM WAV) are decoded once into a local PCM preview cache and served from there |
 
 ### 3.3 Timeline, diary & meetings
 | Method | Path | Purpose | Traces |

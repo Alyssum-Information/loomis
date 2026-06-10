@@ -20,16 +20,27 @@
         <v-chip v-if="recording.kind" class="ml-2" label size="x-small">{{ recording.kind }}</v-chip>
       </div>
 
-      <audio ref="audio" class="w-100 mb-4" controls :src="audioSrc" />
+      <audio
+        ref="audio"
+        class="w-100 mb-4"
+        controls
+        :src="audioSrc"
+        @pause="playing = false"
+        @play="playing = true"
+        @timeupdate="onTimeUpdate"
+      />
 
       <v-card>
         <v-card-title>Transcript</v-card-title>
 
         <v-list>
           <v-list-item
-            v-for="seg in segments"
+            v-for="(seg, i) in segments"
+            :id="`segment-${i}`"
             :key="seg.id ?? seg.idx"
-            @click="seek(seg.start_s)"
+            :active="i === activeIdx"
+            color="primary"
+            @click="playFrom(seg)"
           >
             <template #prepend>
               <v-chip class="mr-3" label size="x-small">{{ speakerLabel(seg) }}</v-chip>
@@ -38,7 +49,15 @@
             <v-list-item-title class="text-wrap">{{ seg.text }}</v-list-item-title>
 
             <template #append>
-              <span class="text-caption text-medium-emphasis">{{ fmt(seg.start_s) }}</span>
+              <span class="text-caption text-medium-emphasis mr-2">{{ fmt(seg.start_s) }}</span>
+
+              <v-btn
+                density="comfortable"
+                :icon="i === activeIdx && playing ? 'mdi-pause' : 'mdi-play'"
+                size="small"
+                variant="text"
+                @click.stop="toggleSegment(seg, i)"
+              />
             </template>
           </v-list-item>
 
@@ -52,7 +71,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { onMounted, ref } from 'vue'
+  import { onMounted, ref, watch } from 'vue'
   import { useRoute } from 'vue-router'
   import {
     audioUrl,
@@ -73,6 +92,9 @@
   const audio = ref<HTMLAudioElement | null>(null)
   const audioSrc = audioUrl(id)
 
+  const playing = ref(false)
+  const activeIdx = ref(-1)
+
   function speakerLabel (seg: Segment): string {
     if (seg.speaker_id != null) return speakerNames.value[seg.speaker_id] ?? `Speaker ${seg.speaker_id}`
     return seg.diarization_label ?? '—'
@@ -84,11 +106,42 @@
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  function seek (seconds: number): void {
-    if (audio.value) {
-      audio.value.currentTime = seconds
-      void audio.value.play()
+  // Highlight the segment the playhead is inside; -1 between segments (silence).
+  function onTimeUpdate (): void {
+    const t = audio.value?.currentTime ?? 0
+    const list = segments.value
+    let idx = -1
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (t >= list[i].start_s) {
+        if (t < list[i].end_s) idx = i
+        break
+      }
     }
+    activeIdx.value = idx
+  }
+
+  // Keep the highlighted line visible while playback advances.
+  watch(activeIdx, idx => {
+    if (idx < 0) return
+    document
+      .querySelector(`#segment-${idx}`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+
+  function playFrom (seg: Segment): void {
+    if (!audio.value) return
+    audio.value.currentTime = seg.start_s
+    void audio.value.play()
+  }
+
+  // The per-line button: play from this line, or pause if it is already playing.
+  function toggleSegment (seg: Segment, i: number): void {
+    if (!audio.value) return
+    if (i === activeIdx.value && playing.value) {
+      audio.value.pause()
+      return
+    }
+    playFrom(seg)
   }
 
   onMounted(async () => {

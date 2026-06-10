@@ -10,6 +10,7 @@ normalized to ``{"error": {"code", "message"}}`` (11 §1).
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -35,6 +36,7 @@ from ..core.events import EventBus
 from ..core.models import Device, DiaryEntry, Job, JobType, Meeting, Recording, Speaker
 from ..ingest import backup
 from ..ingest.watcher import removable_volumes
+from ..pipeline.transcode import TranscodeError, Transcoder
 from .schemas import (
     DeviceRegister,
     DeviceUpdate,
@@ -50,6 +52,8 @@ from .schemas import (
     TimelineDay,
     TranscriptDetail,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -149,16 +153,67 @@ def get_transcript(recording_id: str, conn: Conn) -> TranscriptDetail:
     return TranscriptDetail(transcript=transcript, segments=segments)
 
 
+# Containers browsers decode natively; WAV needs a codec check (recorders often
+# write ADPCM/A-law inside .wav, which no browser plays).
+_BROWSER_SAFE_SUFFIXES = {".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm"}
+_BROWSER_SAFE_WAV_CODECS = {"pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_u8"}
+_AUDIO_MEDIA_TYPES = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",  # ffmpeg's .opus output is Ogg-contained
+    ".webm": "audio/webm",
+}
+
+
+def _playable_path(library_file: Path, recording_id: str, settings: Settings) -> Path:
+    """The file to serve the browser: the library file, or a PCM preview of it.
+
+    Recorder WAVs frequently carry codecs browsers can't decode (ADPCM et al.).
+    Those are decoded once to 16-bit PCM WAV under ``<data_dir>/cache/preview/`` —
+    a pure cache (safe to delete), built lazily on first playback and rebuilt when
+    the source changes. PCM decode is near-instant, and a regular file keeps HTTP
+    Range (seeking) working. If ffmpeg/ffprobe are unavailable the original is
+    served as a best effort.
+    """
+    if library_file.suffix.lower() != ".wav":
+        return library_file
+
+    transcoder = Transcoder(settings.transcode)
+    preview = settings.core.resolved_data_dir / "cache" / "preview" / f"{recording_id}.wav"
+    if preview.is_file() and preview.stat().st_mtime >= library_file.stat().st_mtime:
+        return preview
+
+    codec = transcoder.probe_codec(library_file)
+    if codec is None or codec in _BROWSER_SAFE_WAV_CODECS:
+        return library_file
+    try:
+        transcoder.to_pcm_wav(library_file, preview)
+    except TranscodeError:
+        log.exception("preview transcode failed for %s; serving original", library_file)
+        return library_file
+    return preview
+
+
 @router.get("/recordings/{recording_id}/audio")
-def get_audio(recording_id: str, conn: Conn) -> FileResponse:
-    """Stream the library audio file (FileResponse honours HTTP Range for the player)."""
+def get_audio(recording_id: str, conn: Conn, settings: AppSettings) -> FileResponse:
+    """Stream playable audio for the recording (FileResponse honours HTTP Range).
+
+    Serves the library file directly when browsers can decode it; otherwise serves
+    a lazily-built PCM preview (see :func:`_playable_path`).
+    """
     rec = repository.get_recording(conn, recording_id)
     if rec is None or rec.library_path is None:
         raise HTTPException(status_code=404, detail="audio not found")
     path = Path(rec.library_path)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="audio file missing")
-    return FileResponse(path)
+    path = _playable_path(path, recording_id, settings)
+    media_type = _AUDIO_MEDIA_TYPES.get(path.suffix.lower())
+    return FileResponse(path, media_type=media_type)
 
 
 # --- timeline, diary & meetings (3.3) ---
