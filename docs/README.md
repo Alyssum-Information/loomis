@@ -1,7 +1,8 @@
 # Docs index — Loomis
 
-Loomis is a **local-first voice lifelogger**: plug in a USB recorder and it
-auto-backs-up recordings, transcribes them with speaker labels, recognizes the
+Loomis is a **local-first voice lifelogger**: plug in a USB recorder — or let
+your phone/lifelogger sync into a watched folder — and it auto-backs-up
+recordings, transcribes them with speaker labels, recognizes (and names) the
 same voices across recordings, and turns them into a daily **diary** plus
 standalone **meeting** records — all on-device by default
 ([01 §2](01-vision-and-scope.md#2-vision)). The numbered docs below are grouped

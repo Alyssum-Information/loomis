@@ -24,9 +24,13 @@ export interface Page<T> {
   next_cursor: string | null
 }
 
+export type DeviceKind = 'usb' | 'folder'
+
 export interface Device {
   id: string
   name: string
+  kind: DeviceKind
+  source_path?: string | null
   volume_serial?: string | null
   owner_speaker_id?: number | null
   auto_delete: boolean
@@ -102,6 +106,8 @@ export interface Meeting {
 export interface Speaker {
   id: number
   display_name?: string | null
+  /** LLM-proposed name (FR-5.8); becomes the display name only when the user accepts it. */
+  suggested_name?: string | null
   is_provisional: boolean
   needs_review: boolean
 }
@@ -264,7 +270,7 @@ export function getPendingDevices (): Promise<PendingDevice[]> {
 }
 
 export function registerDevice (
-  body: { volume: string, name?: string, auto_delete?: boolean },
+  body: { volume: string, name?: string, auto_delete?: boolean, kind?: DeviceKind },
 ): Promise<Device> {
   return sendJson<Device>('POST', '/devices/register', body)
 }

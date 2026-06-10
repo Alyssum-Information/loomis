@@ -17,8 +17,8 @@ from typing import Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from .config import LlmSettings
-from .errors import PermanentJobError
+from ..core.config import LlmSettings
+from ..core.errors import PermanentJobError
 
 log = logging.getLogger(__name__)
 

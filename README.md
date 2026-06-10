@@ -1,14 +1,17 @@
 # Loomis
 
 > Local-first voice lifelogger — automatically back up recordings from a USB
-> recorder, transcribe them, identify who spoke, and turn them into a personal
-> diary and meeting notes.
+> recorder or a watched folder (phone sync, lifelogger export), transcribe
+> them, identify who spoke, and turn them into a personal diary and meeting
+> notes.
 
-Loomis watches for your audio recorder. The moment you plug it in over USB, it
-copies new recordings to your computer, transcribes them with speaker labels,
-and uses a local LLM to write them up: scattered everyday clips become a daily
-**personal diary** (lifelog), while clear multi-person discussions become
-standalone **meeting records** that your diary links to.
+Loomis watches your recording **sources**. Plug in a recorder over USB — or let
+your phone's sync tool drop files into a watched folder — and it copies new
+recordings to your computer, transcribes them with speaker labels (suggesting
+real names from the conversation itself), and uses a local LLM to write them
+up: scattered everyday clips become a daily **personal diary** (lifelog), while
+clear multi-person discussions become standalone **meeting records** that your
+diary links to.
 
 Everything runs **locally by default** — local files, a local SQLite database,
 on-device speech-to-text, and [Ollama](https://ollama.com) for the LLM. Cloud
@@ -18,13 +21,14 @@ services (OneDrive, Google Drive, …) and cloud LLMs are strictly opt-in.
 
 ## Status
 
-🚧 **Pre-alpha — early implementation.** The design is the spec (see
-[`docs/`](docs/)). Built so far: typed config, SQLite + migration runner, the
-FastAPI `health` API, the Vue + Vuetify SPA skeleton, and **M1 — safe ingest**:
-the SHA-256 "safety spine" backup (`loomis backup`) plus the durable
-transcription pipeline (`loomis worker` — WhisperX with optional Opus transcode).
-Speakers, summaries, and the full UI follow per the
-[roadmap](docs/08-roadmap-and-milestones.md).
+🚧 **Beta — M1–M4 implemented.** The design is the spec (see [`docs/`](docs/)).
+Built so far: the SHA-256 "safety spine" backup from USB recorders **and
+watched folders**, the durable processing pipeline (WhisperX transcription,
+pyannote diarization, cross-recording speaker identity with LLM name
+suggestions, diary/meeting summaries via Ollama), and the Vue + Vuetify web UI
+(timeline, transcripts with audio, speakers, search, jobs). Next is **M5 —
+Release 1.0**: opt-in cloud sync, packaging, first-run polish
+([roadmap](docs/08-roadmap-and-milestones.md)).
 
 ## Getting started
 

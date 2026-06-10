@@ -7,11 +7,36 @@ from ``models.py`` so the wire contract can evolve without touching storage type
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from pydantic import BaseModel
 
-from .models import RecordingKind, RecordingStatus, Segment, Transcript
+# Pipeline read models are part of the wire contract; they live in core so the
+# repository can build them without depending on the API layer.
+from ..core.models import (
+    DeviceKind,
+    PipelineStage,
+    RecordPipeline,
+    Segment,
+    StageState,
+    Transcript,
+)
+
+__all__ = [
+    "DeviceRegister",
+    "DeviceUpdate",
+    "JobAccepted",
+    "Page",
+    "PendingDevice",
+    "PipelineStage",
+    "RecordPipeline",
+    "RetryResult",
+    "SearchHit",
+    "SpeakerMerge",
+    "SpeakerSplit",
+    "SpeakerUpdate",
+    "StageState",
+    "TimelineDay",
+    "TranscriptDetail",
+]
 
 
 class Page[T](BaseModel):
@@ -41,48 +66,6 @@ class TranscriptDetail(BaseModel):
     segments: list[Segment]
 
 
-class StageState(StrEnum):
-    """State of one pipeline stage for a file (derived from its jobs)."""
-
-    PENDING = "pending"  # not started
-    ACTIVE = "active"  # queued or running
-    DONE = "done"
-    FAILED = "failed"  # a job in this stage failed/parked
-
-
-class PipelineStage(BaseModel):
-    """One stage of a file's pipeline; ``job_id`` is the retryable job when failed."""
-
-    state: StageState
-    job_id: int | None = None
-    error: str | None = None
-
-
-class RecordPipeline(BaseModel):
-    """A recording tracked through its processing stages: backup → STT → summary (FR-7.6).
-
-    The Records screen renders one of these per recording. ``backup`` reflects the
-    safety-spine import (no job); ``stt`` covers transcript readiness (transcode/stt);
-    ``summary`` folds the post-transcript work (diarize/speaker_id/classify/
-    diary_aggregate/meeting_extract).
-    """
-
-    recording_id: str
-    name: str  # display label — basename of the source file
-    device_id: str
-    device_name: str | None = None
-    kind: RecordingKind | None = None
-    status: RecordingStatus
-    recorded_at: str | None = None
-    imported_at: str | None = None
-    duration_s: float | None = None
-    size_bytes: int = 0
-    backup: PipelineStage
-    stt: PipelineStage
-    summary: PipelineStage
-    updated_at: str | None = None
-
-
 class PendingDevice(BaseModel):
     """A connected volume that is not yet registered — drives the new-device prompt (FR-1.2)."""
 
@@ -94,9 +77,12 @@ class PendingDevice(BaseModel):
 
 
 class DeviceRegister(BaseModel):
-    volume: str
+    """Register a source: a connected volume or a local folder path (FR-1.3, FR-1.11)."""
+
+    volume: str  # volume root (e.g. "E:\\") or watched-folder path
     name: str | None = None
     auto_delete: bool | None = None
+    kind: DeviceKind | None = None  # default: auto-detect (removable volume → usb, else folder)
 
 
 class DeviceUpdate(BaseModel):

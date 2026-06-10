@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from loomis import db, repository
-from loomis.config import (
+from loomis.core import db, repository
+from loomis.core.config import (
+    BackupSettings,
     CoreSettings,
     DiarizeSettings,
     LlmSettings,
@@ -17,14 +18,16 @@ from loomis.config import (
     SpeakerIdSettings,
     SttSettings,
 )
+from loomis.core.events import EventBus, drain
+from loomis.core.models import JobType
 from loomis.daemon import Daemon
-from loomis.events import EventBus, drain
-from loomis.models import JobType
 
 
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),
@@ -44,7 +47,7 @@ def test_daemon_runs_enqueued_job_and_emits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Neutralize the device watcher so the test never touches real removable media.
-    monkeypatch.setattr("loomis.watcher.removable_volumes", lambda: set())
+    monkeypatch.setattr("loomis.ingest.watcher.removable_volumes", lambda: set())
 
     settings = _settings(tmp_path)
     conn = _conn(settings)
@@ -73,7 +76,7 @@ def test_daemon_runs_enqueued_job_and_emits(
 
 
 def test_daemon_start_stop_is_clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("loomis.watcher.removable_volumes", lambda: set())
+    monkeypatch.setattr("loomis.ingest.watcher.removable_volumes", lambda: set())
     settings = _settings(tmp_path)
     _conn(settings)  # ensure the DB exists for the watcher thread's connection
 

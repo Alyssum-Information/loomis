@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from loomis.events import EventBus, drain
+from loomis.core.events import EventBus, drain
 
 
 def test_publish_delivers_to_subscriber() -> None:

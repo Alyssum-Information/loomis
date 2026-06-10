@@ -1,8 +1,8 @@
 """FastAPI application factory.
 
 Hosts the REST/WebSocket surface the Vue SPA consumes
-(see ../../docs/11-api-specification.md). Right now only ``/api/v1/health`` exists
-— the walking skeleton that proves config + DB + API + frontend wiring works.
+(see ../../../docs/11-api-specification.md): the lifespan opens the DB, applies
+migrations, and (unless disabled) starts the in-process background daemon.
 """
 
 from __future__ import annotations
@@ -15,18 +15,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, db
-from .api import install_error_handlers
-from .api import router as api_router
-from .config import Settings, get_settings
-from .daemon import Daemon
-from .events import EventBus
-from .logging_setup import configure_logging
+from .. import __version__
+from ..core import db
+from ..core.config import Settings, get_settings
+from ..core.events import EventBus
+from ..core.logging_setup import configure_logging
+from ..daemon import Daemon
+from .routes import install_error_handlers
+from .routes import router as api_router
 
 API_PREFIX = "/api/v1"
 
-# app.py -> loomis -> src -> backend -> repo root -> web/dist
-_SPA_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
+# app.py -> api -> loomis -> src -> backend -> repo root -> web/dist
+_SPA_DIST = Path(__file__).resolve().parents[4] / "web" / "dist"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

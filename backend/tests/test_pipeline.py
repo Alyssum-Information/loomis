@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from loomis import backup, db, pipeline, repository
-from loomis.config import (
+from loomis.core import db, repository
+from loomis.core.config import (
+    BackupSettings,
     CoreSettings,
     DiarizeSettings,
     LlmSettings,
@@ -17,8 +18,10 @@ from loomis.config import (
     SpeakerIdSettings,
     SttSettings,
 )
-from loomis.devicefile import device_file_path
-from loomis.jobs import JobRunner
+from loomis.ingest import backup
+from loomis.ingest.devicefile import device_file_path
+from loomis.pipeline import steps as pipeline
+from loomis.pipeline.runner import JobRunner
 
 _AUDIO = b"RIFF\x00\x00\x00\x00WAVEfake-audio" * 8
 
@@ -27,6 +30,8 @@ def _settings(tmp_path: Path) -> Settings:
     # Null engines/provider keep the test offline (no torch/whisperx/pyannote/network).
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),
@@ -132,7 +137,7 @@ def test_failed_handler_parks_and_marks_recording_failed(tmp_path: Path) -> None
     def boom(_ctx: object, _job: object) -> None:
         raise RuntimeError("nope")
 
-    from loomis.models import JobType
+    from loomis.core.models import JobType
 
     runner = JobRunner(settings, handlers={JobType.STT: boom})
     runner.drain(conn)
@@ -147,8 +152,8 @@ def test_failed_handler_parks_and_marks_recording_failed(tmp_path: Path) -> None
 def test_permanent_error_parks_without_retrying(tmp_path: Path) -> None:
     # A missing dependency / bad config is permanent: park on the first attempt with a
     # clear message, instead of burning the full retry budget.
-    from loomis.errors import PermanentJobError
-    from loomis.models import JobType
+    from loomis.core.errors import PermanentJobError
+    from loomis.core.models import JobType
 
     settings = _settings(tmp_path)
     conn = _conn(settings)
@@ -201,7 +206,7 @@ def test_transcode_retry_on_already_opus_is_idempotent(
     conn.execute(
         "UPDATE recordings SET library_path = ?, codec = 'opus' WHERE id = ?", (repo_path, rec_id)
     )
-    from loomis.models import JobType
+    from loomis.core.models import JobType
 
     repository.enqueue_job(conn, JobType.TRANSCODE, {"recording_id": rec_id})
     monkeypatch.setattr(pipeline, "Transcoder", _ExplodingTranscoder)

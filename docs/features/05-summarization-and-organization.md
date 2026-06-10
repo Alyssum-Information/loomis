@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | Feature Spec — Summarization & Organization (Diary vs Meeting) |
 | **Doc ID** | LM-F05 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [04 Speakers](04-speaker-diarization-and-identification.md), [05 Data Model](../05-data-model-and-storage.md), [ADR-0005](../adr/0005-llm-provider-abstraction.md) |
 | **Traces** | FR-6.1 … FR-6.9 |
 
@@ -50,7 +50,8 @@ Scope: all *diary-type* recordings for one local calendar day.
   "mood": "string",
   "todos": ["..."],
   "decisions": ["..."],
-  "mentioned_people": ["name", "..."]
+  "mentioned_people": ["name", "..."],
+  "speaker_names": [{ "speaker": "Speaker 3", "name": "小明" }]
 }
 ```
 
@@ -74,7 +75,8 @@ Scope: a *meeting-type* recording, or a contiguous group forming one discussion
   "summary_markdown": "string",
   "decisions": ["..."],
   "action_items": [{ "owner": "name", "task": "string", "due": "optional" }],
-  "topics": ["..."]
+  "topics": ["..."],
+  "speaker_names": [{ "speaker": "Speaker 3", "name": "小明" }]
 }
 ```
 
@@ -84,6 +86,18 @@ provisional identities. Render `meetings/<meeting_id>.md`; create the back-link
 into that day's diary (`diary_meeting_links`).
 
 ## 5. Prompting & structured output (FR-6.7)
+
+### 5.1 Speaker name suggestions (FR-5.8)
+
+Both modes ask the model for one extra key, `speaker_names`: for any speaker
+labelled `Speaker N` in the transcript whose real name is evident from the
+conversation (addressed by name, self-introduction), return
+`{ "speaker": "Speaker N", "name": "..." }`. The pipeline maps each entry back
+to the speaker row and stores it as `suggested_name` **only if** that identity
+is still unnamed — display names are always user-confirmed
+([feature 04 §6.1](04-speaker-diarization-and-identification.md#61-llm-name-suggestions-fr-58)).
+Speakers already named appear in the transcript under their real name, so the
+model naturally skips them.
 
 - **Schema-validated** JSON (pydantic), retried on mismatch → deterministic,
   storable output.

@@ -40,10 +40,33 @@
                 label
                 size="x-small"
               >review</v-chip>
+
+              <!-- LLM-suggested name (FR-5.8): one click accepts it as the display name. -->
+              <v-chip
+                v-if="sp.suggested_name && !sp.display_name"
+                class="ml-1"
+                color="primary"
+                label
+                prepend-icon="mdi-lightbulb-outline"
+                size="x-small"
+                @click="acceptSuggestion(sp.id, sp.suggested_name)"
+              >
+                {{ sp.suggested_name }}?
+              </v-chip>
             </td>
 
             <td class="text-right">
               <v-btn size="small" variant="text" @click="rename(sp.id)">Save</v-btn>
+
+              <v-btn
+                v-if="sp.suggested_name && !sp.display_name"
+                color="primary"
+                size="small"
+                variant="text"
+                @click="acceptSuggestion(sp.id, sp.suggested_name)"
+              >
+                Accept "{{ sp.suggested_name }}"
+              </v-btn>
 
               <v-btn
                 v-if="sp.is_provisional"
@@ -161,6 +184,11 @@
   const rename = (id: number) => act(() => updateSpeaker(id, { display_name: names.value[id] }))
   const confirm = (id: number) => act(() => updateSpeaker(id, { is_provisional: false }))
 
+  // Accepting a suggestion names + confirms the identity in one step (FR-5.8).
+  function acceptSuggestion (id: number, name: string): Promise<void> {
+    return act(() => updateSpeaker(id, { display_name: name, is_provisional: false }))
+  }
+
   function doMerge (): void {
     if (mergeSource.value == null || mergeTarget.value == null) return
     void act(() => mergeSpeakers(mergeSource.value!, mergeTarget.value!))
@@ -178,7 +206,7 @@
     refresh()
     // merge/split run as jobs; refresh when they finish.
     events.on(event => {
-      if (event.type === 'job.updated') refresh()
+      if (event.type === 'job.updated' || event.type === 'speaker.updated') refresh()
     })
   })
 </script>

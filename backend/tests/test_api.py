@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from loomis import db, repository
-from loomis.app import create_app
-from loomis.config import ApiSettings, CoreSettings, Settings
-from loomis.models import (
+from loomis.api.app import create_app
+from loomis.core import db, repository
+from loomis.core.config import ApiSettings, BackupSettings, CoreSettings, Settings
+from loomis.core.models import (
     Device,
     DiaryEntry,
     Meeting,
@@ -25,6 +25,8 @@ from loomis.models import (
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         api=ApiSettings(run_daemon=False, serve_spa=False),
     )
 

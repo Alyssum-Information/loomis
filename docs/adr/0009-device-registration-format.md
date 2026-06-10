@@ -20,7 +20,9 @@ Write a small JSON file at **`<volume>/.loomis/device.json`** at registration.
 It carries a stable Loomis-generated `device_id` (UUID), a human name, an owner
 voice hint, audio globs, and per-device backup/transcode preferences. It is
 **versioned** via a `schema` field and validated (pydantic) on every connect.
-Full schema in [05 §2](../05-data-model-and-storage.md#2-on-device-registration-file--devicejson).
+Full schema in [05 §2](../05-data-model-and-storage.md#2-on-source-registration-file--devicejson).
+[ADR-0012](0012-folder-sources.md) later extends the same file (with a `kind`
+field) to watched-folder sources.
 
 Identity resolution order: `device_id` from `device.json` → volume serial/label
 fallback (when the file is missing or the volume is read-only).

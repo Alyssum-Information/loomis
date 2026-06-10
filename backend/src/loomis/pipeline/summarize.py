@@ -7,9 +7,20 @@ versioned prompts handed to the LLM, and the human-readable Markdown written to
 
 from __future__ import annotations
 
-from .models import DiaryDoc, MeetingDoc, Segment
+from ..core.models import DiaryDoc, MeetingDoc, Segment
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"  # v2: prompts also ask for speaker_names (FR-5.8)
+
+# Shared clause asking the model to name unnamed speakers from conversational
+# evidence. Labels must round-trip exactly ("Speaker N") so the pipeline can map
+# guesses back to speaker rows; named speakers already appear under their real
+# name, so the model naturally skips them.
+_SPEAKER_NAMES_CLAUSE = (
+    'speaker_names (list of {"speaker", "name"}: for any speaker labelled '
+    '"Speaker N" whose real name is evident from the conversation — addressed '
+    "by name, self-introduction — give the label exactly as written and the "
+    "inferred name; omit speakers whose name is not evident)"
+)
 
 
 def _lang_clause(language: str) -> str:
@@ -47,7 +58,7 @@ def build_diary_prompt(text: str, language: str) -> str:
         "You are writing the author's first-person daily diary from the day's audio "
         "transcripts below. Produce JSON with keys: title, narrative_markdown "
         "(first-person prose), topics (list), mood, todos (list), decisions (list), "
-        "mentioned_people (list).\n\n"
+        f"mentioned_people (list), {_SPEAKER_NAMES_CLAUSE}.\n\n"
         f"Transcripts (chronological):\n{text}"
     )
 
@@ -57,7 +68,7 @@ def build_meeting_prompt(text: str, language: str) -> str:
         f"{_lang_clause(language)}"
         "Summarize the following meeting transcript. Produce JSON with keys: title, "
         "attendees (list of names), summary_markdown, decisions (list), action_items "
-        "(list of {owner, task, due}), topics (list).\n\n"
+        f"(list of {{owner, task, due}}), topics (list), {_SPEAKER_NAMES_CLAUSE}.\n\n"
         f"Transcript:\n{text}"
     )
 

@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | System Architecture |
 | **Doc ID** | LM-04 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [03 SRS](03-requirements-specification.md), [05 Data Model](05-data-model-and-storage.md), [features/](features/), [adr/](adr/README.md) |
 | **Traces** | NFR-1 … NFR-8 |
 
@@ -30,23 +30,23 @@ cross-cutting concerns (concurrency, durability, privacy). It is the
 ## 2. System context
 
 ```
-                 ┌──────────────────────────────────────────────────────┐
-   USB recorder  │                     Loomis                            │
-   ┌─────────┐   │   ┌──────────────────────────┐    ┌────────────────┐  │
-   │ audio + │◀──┼──▶│  backend/ (Python)       │    │  web/ (Vue SPA)│  │
-   │device.json│  │   │  ┌────────┐ ┌─────────┐ │REST│  Vuetify       │  │
-   └─────────┘   │   │  │ Daemon │ │ FastAPI │◀┼────┼─ + WebSocket    │  │
-                 │   │  │(workers)│ │ REST/WS │ │    └────────────────┘  │
-                 │   │  └────┬───┘ └────┬────┘ │                         │
-                 │   └───────┼──────────┼──────┘                         │
-                 │   ┌───────▼──────────▼─────────────────────────────┐  │
-                 │   │ SQLite DB  +  File library (audio/MD)           │  │
-                 │   └───────┬────────────────────────────────────────┘  │
-                 └───────────┼──────────────────────────────────────────-┘
-                             │ (opt-in only)
-              ┌──────────────┼──────────────┐
-              ▼                              ▼
-     Ollama / cloud LLM            rclone → OneDrive / GDrive / …
+ sources         ┌──────────────────────────────────────────────────────┐
+ ┌────────────┐  │                     Loomis                            │
+ │USB recorder│◀─┼─▶┌──────────────────────────┐     ┌────────────────┐  │
+ ├────────────┤  │  │  backend/ (Python)       │     │  web/ (Vue SPA)│  │
+ │watched     │  │  │  ┌────────┐ ┌─────────┐  │ REST│  Vuetify       │  │
+ │folder      │◀─┼─▶│  │ Daemon │ │ FastAPI │◀─┼─────┼─ + WebSocket   │  │
+ │(phone /    │  │  │  │(workers)│ │ REST/WS │  │     └────────────────┘  │
+ │ lifelogger │  │  │  └────┬───┘ └────┬────┘  │                          │
+ │ sync)      │  │  └───────┼──────────┼───────┘                          │
+ └────────────┘  │  ┌───────▼──────────▼──────────────────────────────┐   │
+                 │  │ SQLite DB  +  File library (audio/MD)            │   │
+                 │  └───────┬─────────────────────────────────────────┘   │
+                 └──────────┼──────────────────────────────────────────---┘
+                            │ (opt-in only)
+             ┌──────────────┼──────────────┐
+             ▼                              ▼
+    Ollama / cloud LLM            rclone → OneDrive / GDrive / …
 ```
 
 The **backend** (Python, in `backend/`) hosts both the background daemon and a
@@ -58,10 +58,11 @@ and the [repository layout](#12-repository-layout).
 ## 3. Processes
 
 ### 3.1 Daemon (background workers)
-Owns all side effects: watching devices, importing, transcoding, running the
-processing pipeline, and cloud sync. Single writer to the file library.
-Internally: the **Device Watcher**, the **Job Runner** (worker pool), and the
-**Scheduler** (cloud sync, diary "day-settled" debounce).
+Owns all side effects: watching sources (USB volumes **and** registered
+folders), importing, transcoding, running the processing pipeline, and cloud
+sync. Single writer to the file library. Internally: the **Source Watcher**
+(volume connect events + folder polls), the **Job Runner** (worker pool), and
+the **Scheduler** (cloud sync, diary "day-settled" debounce).
 
 ### 3.2 API server (FastAPI, Python — `backend/`)
 A local HTTP server (default `127.0.0.1`, LAN-accessible only if the user opts
@@ -85,8 +86,8 @@ in development a Vite dev server proxies to the API. See
 
 | Component | Responsibility | Key deps | Feature spec |
 |-----------|----------------|----------|--------------|
-| **Device Watcher** | Detect volume connect/remove; resolve registered device. | psutil + native events | [01](features/01-device-registration-and-backup.md) |
-| **Device Registry** | Read/write `device.json`; manage `devices` rows. | pydantic | [01](features/01-device-registration-and-backup.md) |
+| **Source Watcher** | Detect volume connect/remove; poll registered folder sources; resolve registered source. | psutil + native events | [01](features/01-device-registration-and-backup.md) |
+| **Source Registry** | Read/write `device.json` (volumes *and* folders); manage `devices` rows. | pydantic | [01](features/01-device-registration-and-backup.md) |
 | **Backup/Ingest** | Enumerate, dedupe via ledger, copy, SHA-256 verify, optional source delete. | hashlib, shutil | [01](features/01-device-registration-and-backup.md) |
 | **Transcoder** | Optional Opus transcode; validate output. | ffmpeg (libopus) | [02](features/02-audio-compression.md) |
 | **Job Runner** | Pull jobs, execute pipeline steps, retry, record errors. | SQLite queue | [04 §6](#6-processing-pipeline) |
@@ -210,27 +211,38 @@ See the [ADR index](adr/README.md). Summary:
 
 A monorepo with a clear backend/frontend split:
 
+Backend packages follow the four architecture roles (not one package per
+feature — most features are a single module, and the pipeline reads best as one
+ordered package):
+
 ```
 loomis/
-  backend/                 # Python: core, pipeline, daemon, FastAPI API
+  backend/                 # Python backend
     pyproject.toml         # backend project (uv, ruff, mypy, pytest)
     src/loomis/
-      core/                # config, storage, migrations
-      devices/             # watcher, registry, backup/ingest  (feature 01)
-      audio/               # transcode                          (feature 02)
-      pipeline/            # job runner + steps
-      stt/ diarize/ speakers/   # features 03, 04
-      summarize/           # classify + LLM adapters            (feature 05)
-      cloud/               # rclone sync                        (feature 06)
-      api/                 # FastAPI routers + WebSocket + schemas
+      cli.py               # `loomis <command>` entry point
+      launcher.py          # one-click dev launcher (`loomis up`)
+      daemon.py            # background threads: job runner + source watcher
+      core/                # shared foundation: config, db + migrations,
+                           #   models, repository (SQL), storage, event bus,
+                           #   errors, logging, transactions
+      ingest/              # sources + the safety spine (feature 01):
+                           #   watcher, devicefile, backup
+      pipeline/            # job runner + every pipeline step (features 02-05):
+                           #   runner, steps, transcode, stt, diarize,
+                           #   speakerid, classify, summarize, llm
+      api/                 # HTTP surface (11): app factory, routes, schemas
     tests/
   web/                     # Vue 3 + Vuetify SPA (Vite)
     package.json
-    src/                   # views, components, API client, stores (Pinia)
+    src/                   # pages, components, API client, stores (Pinia)
     index.html
   docs/                    # this documentation
   README.md  LICENSE  ...
 ```
+
+Cloud sync (feature 06) will land as `cloud/` beside `ingest/` when M5 builds
+it.
 
 The backend is the only writer to SQLite + the file library; the frontend is a
 pure client. Tooling lives per side: `backend/pyproject.toml`

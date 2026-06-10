@@ -5,8 +5,9 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from loomis import db, repository
-from loomis.config import (
+from loomis.core import db, repository
+from loomis.core.config import (
+    BackupSettings,
     CoreSettings,
     DiarizeSettings,
     LlmSettings,
@@ -14,16 +15,10 @@ from loomis.config import (
     SpeakerIdSettings,
     SttSettings,
 )
-from loomis.jobs import JobRunner
-from loomis.models import Device, JobType, Recording, RecordingStatus, Segment, Transcript
-from loomis.speakerid import (
-    MatchDecision,
-    blob_to_vec,
-    centroid,
-    cosine,
-    match,
-    vec_to_blob,
-)
+from loomis.core.models import Device, JobType, Recording, RecordingStatus, Segment, Transcript
+from loomis.core.vectors import blob_to_vec, centroid, cosine, vec_to_blob
+from loomis.pipeline.runner import JobRunner
+from loomis.pipeline.speakerid import MatchDecision, match
 
 # --- vector math ---
 
@@ -83,6 +78,8 @@ def test_match_borderline_is_uncertain() -> None:
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),

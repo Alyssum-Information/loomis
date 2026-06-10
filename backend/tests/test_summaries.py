@@ -5,9 +5,11 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from loomis import db, repository
-from loomis.classify import classify_segments
-from loomis.config import (
+import pytest
+
+from loomis.core import db, repository
+from loomis.core.config import (
+    BackupSettings,
     CoreSettings,
     DiarizeSettings,
     LlmSettings,
@@ -16,9 +18,7 @@ from loomis.config import (
     SttSettings,
     SummariesSettings,
 )
-from loomis.jobs import JobRunner
-from loomis.llm import NullProvider, complete_structured, get_provider, model_id
-from loomis.models import (
+from loomis.core.models import (
     Device,
     DiaryDoc,
     JobType,
@@ -27,6 +27,9 @@ from loomis.models import (
     Segment,
     Transcript,
 )
+from loomis.pipeline.classify import classify_segments
+from loomis.pipeline.llm import NullProvider, complete_structured, get_provider, model_id
+from loomis.pipeline.runner import JobRunner
 
 _SUM = SummariesSettings()
 
@@ -81,6 +84,8 @@ def test_model_id_format() -> None:
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),
@@ -167,7 +172,65 @@ def test_meeting_extract_rerun_is_idempotent(tmp_path: Path) -> None:
 def test_get_provider_unknown_raises() -> None:
     import pytest
 
-    from loomis.errors import PermanentJobError
+    from loomis.core.errors import PermanentJobError
 
     with pytest.raises(PermanentJobError, match="unknown llm provider"):
         get_provider(LlmSettings(provider="bogus"))
+
+
+# --- speaker name suggestions (FR-5.8) ---
+
+
+class _NamingProvider:
+    """Fake LLM that names speakers; bad labels and unknown ids must be ignored."""
+
+    name = "fake"
+    model: str | None = "fake-model"
+
+    def complete(self, prompt: str, *, json_mode: bool) -> str:
+        return (
+            '{"title": "Sync", "speaker_names": ['
+            '{"speaker": "Speaker 1", "name": "Alice"},'
+            '{"speaker": "Speaker 2", "name": "Bob"},'
+            '{"speaker": "Speaker 99", "name": "Ghost"},'
+            '{"speaker": "not-a-label", "name": "X"}]}'
+        )
+
+
+def test_summaries_suggest_names_for_unnamed_speakers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path)
+    conn = _conn(settings)
+    _seed_meeting(conn, "rec-1", "2026-06-09T10:00:00+08:00")  # creates speakers 1 and 2
+    repository.update_speaker(conn, 2, display_name="Named Already")
+    monkeypatch.setattr("loomis.pipeline.steps.get_provider", lambda _s: _NamingProvider())
+
+    repository.enqueue_job(conn, JobType.CLASSIFY, {"recording_id": "rec-1"})
+    JobRunner(settings).drain(conn)
+
+    row1 = conn.execute(
+        "SELECT display_name, suggested_name, needs_review FROM speakers WHERE id = 1"
+    ).fetchone()
+    assert row1["display_name"] is None  # a suggestion never becomes the name by itself
+    assert row1["suggested_name"] == "Alice"
+    assert row1["needs_review"] == 1
+
+    row2 = conn.execute("SELECT display_name, suggested_name FROM speakers WHERE id = 2").fetchone()
+    assert row2["display_name"] == "Named Already"  # named speakers are never touched
+    assert row2["suggested_name"] is None
+
+
+def test_accepting_name_clears_suggestion(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    conn = _conn(settings)
+    sid = repository.create_speaker(conn)
+    assert repository.suggest_speaker_name(conn, sid, "Alice") is True
+
+    speaker = repository.update_speaker(conn, sid, display_name="Alice")
+    assert speaker is not None
+    assert speaker.display_name == "Alice"
+    assert speaker.suggested_name is None
+
+    # Once named, later suggestions are no-ops (user choice wins).
+    assert repository.suggest_speaker_name(conn, sid, "Bob") is False

@@ -1,7 +1,8 @@
-"""REST read surface (v1) — the Vue SPA's query API (11 §3).
+"""REST + WebSocket surface (v1) — the Vue SPA's only backend contract (11 §3–4).
 
-All endpoints here are read-only (GET); command endpoints that enqueue work arrive
-in a later PR. Each request gets its own short-lived SQLite connection (sqlite
+Reads are plain GETs; commands either mutate quickly and return the resource, or
+enqueue a durable job and return ``202`` + ``job_id`` with progress streamed over
+``/ws``. Each request gets its own short-lived SQLite connection (sqlite
 connections aren't shareable across the threadpool's worker threads). Errors are
 normalized to ``{"error": {"code", "message"}}`` (11 §1).
 """
@@ -28,10 +29,12 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import backup, db, repository
-from .config import Settings
-from .events import EventBus
-from .models import Device, DiaryEntry, Job, JobType, Meeting, Recording, Speaker
+from ..core import db, repository
+from ..core.config import Settings
+from ..core.events import EventBus
+from ..core.models import Device, DiaryEntry, Job, JobType, Meeting, Recording, Speaker
+from ..ingest import backup
+from ..ingest.watcher import removable_volumes
 from .schemas import (
     DeviceRegister,
     DeviceUpdate,
@@ -47,7 +50,6 @@ from .schemas import (
     TimelineDay,
     TranscriptDetail,
 )
-from .watcher import removable_volumes
 
 router = APIRouter()
 
@@ -223,12 +225,16 @@ def list_pipeline(conn: Conn, limit: Limit = 50, cursor: str | None = None) -> P
 
 @router.post("/devices/register", response_model=Device, status_code=201)
 def register_device(body: DeviceRegister, conn: Conn, settings: AppSettings) -> Device:
-    """Register a connected volume as a device (FR-1.3); writes device.json + the DB row."""
+    """Register a source — connected volume or local folder (FR-1.3, FR-1.11).
+
+    Writes device.json into the source root + the DB row. ``kind`` is auto-detected
+    from the path unless given explicitly.
+    """
     volume = Path(body.volume)
-    if not volume.exists():
-        raise HTTPException(status_code=404, detail="volume not found")
+    if not volume.is_dir():
+        raise HTTPException(status_code=404, detail="volume or folder not found")
     return backup.register_device(
-        conn, volume, settings, name=body.name, auto_delete=body.auto_delete
+        conn, volume, settings, name=body.name, auto_delete=body.auto_delete, kind=body.kind
     )
 
 

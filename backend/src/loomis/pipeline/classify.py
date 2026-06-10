@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from .config import SummariesSettings
-from .models import ClassifyResult, Segment
+from ..core.config import SummariesSettings
+from ..core.models import ClassifyResult, Segment
 
 
 def _speaker_key(seg: Segment) -> str | None:

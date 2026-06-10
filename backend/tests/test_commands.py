@@ -9,10 +9,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from loomis import db, repository
-from loomis.app import create_app
-from loomis.config import (
+from loomis.api.app import create_app
+from loomis.core import db, repository
+from loomis.core.config import (
     ApiSettings,
+    BackupSettings,
     CoreSettings,
     DiarizeSettings,
     LlmSettings,
@@ -20,8 +21,7 @@ from loomis.config import (
     SpeakerIdSettings,
     SttSettings,
 )
-from loomis.jobs import JobRunner
-from loomis.models import (
+from loomis.core.models import (
     JobStatus,
     JobType,
     Recording,
@@ -29,11 +29,14 @@ from loomis.models import (
     Segment,
     Transcript,
 )
+from loomis.pipeline.runner import JobRunner
 
 
 def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         api=ApiSettings(run_daemon=False, serve_spa=False),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
@@ -80,7 +83,7 @@ def test_register_missing_volume_404(ctx: tuple[TestClient, Settings], tmp_path:
 def test_register_then_unregister(
     ctx: tuple[TestClient, Settings], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from loomis import backup
+    from loomis.ingest import backup
 
     client, _ = ctx
     volume = tmp_path / "REC"
@@ -160,7 +163,7 @@ def _seed_speaker_with_recording(conn: sqlite3.Connection, speaker_id: int, rec_
 def test_merge_speakers_job(ctx: tuple[TestClient, Settings]) -> None:
     client, settings = ctx
     conn = _conn(settings)
-    from loomis.models import Device
+    from loomis.core.models import Device
 
     repository.insert_device(conn, Device(id="dev-1", name="R"))
     s1 = repository.create_speaker(conn)
@@ -183,7 +186,7 @@ def test_merge_speakers_job(ctx: tuple[TestClient, Settings]) -> None:
 def test_split_speaker_job(ctx: tuple[TestClient, Settings]) -> None:
     client, settings = ctx
     conn = _conn(settings)
-    from loomis.models import Device
+    from loomis.core.models import Device
 
     repository.insert_device(conn, Device(id="dev-1", name="R"))
     s1 = repository.create_speaker(conn)

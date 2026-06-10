@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .config import TranscodeSettings
+from ..core.config import TranscodeSettings
 
 
 class TranscodeError(RuntimeError):

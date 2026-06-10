@@ -15,7 +15,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from . import __version__
-from .config import Settings, get_settings
+from .core.config import Settings, get_settings
 
 
 def _up(args: argparse.Namespace) -> int:
@@ -32,7 +32,7 @@ def _check(_: argparse.Namespace) -> int:
 
 def _open_db(settings: Settings) -> sqlite3.Connection:
     """Open the library DB and bring the schema up to date."""
-    from . import db
+    from .core import db
 
     data_dir = settings.core.resolved_data_dir
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -51,7 +51,7 @@ def _backup_one(
 ) -> None:
     import logging
 
-    from . import backup
+    from .ingest import backup
 
     if not volume.exists():
         print(f"volume not found: {volume}")
@@ -77,8 +77,8 @@ def _backup_one(
 
 
 def _backup(args: argparse.Namespace) -> int:
-    from .logging_setup import configure_logging
-    from .watcher import DeviceWatcher
+    from .core.logging_setup import configure_logging
+    from .ingest.watcher import DeviceWatcher
 
     settings = get_settings()
     configure_logging(settings.core.log_level)
@@ -110,16 +110,16 @@ def _backup(args: argparse.Namespace) -> int:
 def _worker(args: argparse.Namespace) -> int:
     import threading
 
-    from .jobs import JobRunner
-    from .logging_setup import configure_logging
-    from .pipeline import HANDLERS
+    from .core.logging_setup import configure_logging
+    from .pipeline.runner import JobRunner
+    from .pipeline.steps import HANDLERS
 
     settings = get_settings()
     configure_logging(settings.core.log_level)
 
     handlers = HANDLERS
     if args.types:
-        from .models import JobType
+        from .core.models import JobType
 
         wanted = {JobType(t.strip()) for t in args.types.split(",") if t.strip()}
         handlers = {k: v for k, v in HANDLERS.items() if k in wanted}
@@ -155,7 +155,7 @@ def _serve(_: argparse.Namespace) -> int:
     settings = get_settings()
     # import string so uvicorn can manage the app lifecycle / reload
     uvicorn.run(
-        "loomis.app:create_app",
+        "loomis.api.app:create_app",
         factory=True,
         host=settings.api.host,
         port=settings.api.port,
@@ -200,8 +200,12 @@ def main(argv: list[str] | None = None) -> int:
     p_check = sub.add_parser("check", help="report prerequisite tool status")
     p_check.set_defaults(func=_check)
 
-    p_backup = sub.add_parser("backup", help="import audio from a recorder volume")
-    p_backup.add_argument("volume", nargs="?", help="mounted recorder volume (e.g. E:\\)")
+    p_backup = sub.add_parser("backup", help="import audio from a recorder volume or folder")
+    p_backup.add_argument(
+        "volume",
+        nargs="?",
+        help="mounted recorder volume (e.g. E:\\) or local folder (registers as a folder source)",
+    )
     p_backup.add_argument(
         "--watch", action="store_true", help="poll for volumes and import on connect"
     )

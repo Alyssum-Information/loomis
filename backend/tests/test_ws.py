@@ -7,10 +7,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from loomis import db, repository
-from loomis.app import create_app
-from loomis.config import (
+from loomis.api.app import create_app
+from loomis.core import db, repository
+from loomis.core.config import (
     ApiSettings,
+    BackupSettings,
     CoreSettings,
     DiarizeSettings,
     LlmSettings,
@@ -18,9 +19,9 @@ from loomis.config import (
     SpeakerIdSettings,
     SttSettings,
 )
-from loomis.events import EventBus, drain
-from loomis.jobs import JobRunner
-from loomis.models import Device, JobType, Recording, RecordingKind, RecordingStatus
+from loomis.core.events import EventBus, drain
+from loomis.core.models import Device, JobType, Recording, RecordingKind, RecordingStatus
+from loomis.pipeline.runner import JobRunner
 
 
 def test_ws_relays_bus_events(tmp_path: Path) -> None:
@@ -38,6 +39,8 @@ def test_ws_relays_bus_events(tmp_path: Path) -> None:
 def _pipeline_settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
+        # tmp_path sources look like folders; skip the sync settle window in tests
+        backup=BackupSettings(folder_settle_seconds=0.0),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
         speaker_id=SpeakerIdSettings(engine="null"),

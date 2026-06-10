@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | Vision & Scope |
 | **Doc ID** | LM-01 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [02 User Flows](02-user-flows.md), [03 SRS](03-requirements-specification.md), [04 Architecture](04-system-architecture.md), [09 Security & Privacy](09-security-and-privacy-model.md) |
 | **Traces** | — (sets goals that all FRs derive from) |
 
@@ -25,13 +25,16 @@ recording as a meeting — they have no concept of a *personal lifelog*.
 
 ## 2. Vision
 
-**Loomis turns a USB voice recorder into an effortless, private lifelog.** Plug
-in the recorder and walk away; everything else happens automatically and stays
-on your machine:
+**Loomis turns your voice recordings into an effortless, private lifelog.**
+Recordings arrive from any **source** — a USB voice recorder, a phone whose
+recordings sync into a watched folder, a wearable lifelogger's drop folder —
+and everything else happens automatically and stays on your machine:
 
 1. New recordings are backed up locally (and optionally to your own cloud).
 2. They are transcribed with speaker labels.
-3. The same voices are recognized across recordings.
+3. The same voices are recognized across recordings, and speakers are
+   **named from the conversation itself** (confirmed by you) so records read
+   like they involve people, not `SPEAKER_03`.
 4. Each day's scattered clips become a first-person **diary** entry.
 5. Real multi-person **discussions** become standalone **meeting** records,
    linked from the diary for that day.
@@ -43,7 +46,7 @@ feature.
 ## 3. Goals
 
 - **Zero-friction capture-to-insight.** The happy path requires only plugging in
-  the device.
+  the device — or nothing at all, when recordings sync into a watched folder.
 - **Privacy by default.** Local storage, local STT, local LLM (Ollama). Any
   network egress is opt-in and clearly surfaced.
 - **Durable & safe.** Never delete source audio before a verified backup. The
@@ -65,9 +68,9 @@ feature.
 ## 5. Personas
 
 **Primary — the self-quantifier / lifelogger** (e.g. the project author):
-technically comfortable, owns a dedicated recorder, captures both private voice
-memos and the occasional meeting, values privacy, and wants a searchable
-personal archive without manual effort.
+technically comfortable, owns a dedicated recorder and/or records on a phone,
+captures both private voice memos and the occasional meeting, values privacy,
+and wants a searchable personal archive without manual effort.
 
 **Secondary:** students recording lectures; journalists/researchers doing
 interviews; anyone who simply wants voice memos transcribed and organized.

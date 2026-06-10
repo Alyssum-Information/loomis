@@ -4,8 +4,8 @@
 |---|---|
 | **Document** | UI / UX Design |
 | **Doc ID** | LM-07 |
-| **Version** | 0.1 (Draft) |
-| **Last updated** | 2026-06-06 |
+| **Version** | 0.2 (Draft) |
+| **Last updated** | 2026-06-10 |
 | **Related** | [02 Flows §6](02-user-flows.md#6-browse--review-ui), [04 Architecture](04-system-architecture.md), [11 API](11-api-specification.md), [features/04 Speakers](features/04-speaker-diarization-and-identification.md), [ADR-0003](adr/0003-frontend-vue-spa.md) |
 | **Traces** | FR-7.1 … FR-7.8 |
 
@@ -33,10 +33,10 @@ OpenAPI schema so the contract stays typed end-to-end.
 | **Recording detail** | Audio player + speaker-labeled transcript, jump-to-time | 7.3 |
 | **Diary entry** | Rendered daily entry; links to source clips and meetings | 7.2 |
 | **Meeting record** | Attendees, summary, decisions, action items | 7.2 |
-| **Speakers** | List/confirm/rename/merge/split identities | 7.4 |
+| **Speakers** | List/confirm/rename/merge/split identities; accept LLM-suggested names | 7.4, 5.8 |
 | **Search** | Full-text across transcripts, diaries, meetings | 7.5 |
 | **Jobs / Health** | Queued/running/failed steps; retry controls | 7.6 |
-| **Devices** | Registered devices; per-device settings | 7.7, 1.7 |
+| **Devices** | Registered sources (USB devices + watched folders); per-source settings; add a folder | 7.7, 1.7, 1.11 |
 | **Settings** | Defaults, models, cloud remotes | 7.7 |
 
 ## 3. Key interactions
@@ -46,6 +46,12 @@ OpenAPI schema so the contract stays typed end-to-end.
 - **Speaker correction** (FR-5.5): inline on the transcript and on the Speakers
   screen; merge/split with undo; feeds the voiceprint flywheel
   ([features/04 §6](features/04-speaker-diarization-and-identification.md#6-human-in-the-loop-fr-55-fr-56)).
+- **Name suggestions** (FR-5.8): an unnamed speaker with an LLM-proposed name
+  shows it as a one-click *accept* chip; accepting writes `display_name`,
+  rejecting just types over it. Suggestions never apply silently.
+- **Add folder source** (FR-1.11): the Devices screen has an "Add folder"
+  action beside the pending-volume prompt; folder rows show the watched path
+  and last-scan time instead of a connect state.
 - **Re-summarize day** (FR-6.8): `POST /diary/{date}/resummarize` → job;
   progress over WebSocket.
 - **Sync now** (FR-8.3): `POST /cloud/sync` → job, with live progress.
