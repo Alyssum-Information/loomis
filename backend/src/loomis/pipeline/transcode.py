@@ -53,6 +53,68 @@ class Transcoder:
         except (KeyError, ValueError, json.JSONDecodeError):
             return None
 
+    def probe_codec(self, path: Path) -> str | None:
+        """Codec name of the first audio stream (e.g. ``pcm_s16le``, ``adpcm_ima_wav``).
+
+        None when ffprobe is unavailable or the file has no audio stream. Used to
+        decide whether a browser can decode the file as-is (11 §3.2).
+        """
+        if shutil.which(self._s.ffprobe_path) is None:
+            return None
+        out = subprocess.run(  # noqa: S603 (configured binary, fixed argv)
+            [
+                self._s.ffprobe_path,
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode != 0:
+            return None
+        try:
+            streams = json.loads(out.stdout)["streams"]
+            return str(streams[0]["codec_name"]) if streams else None
+        except (KeyError, IndexError, ValueError, json.JSONDecodeError):
+            return None
+
+    def to_pcm_wav(self, src: Path, dst: Path) -> None:
+        """Decode ``src`` → 16-bit PCM WAV at ``dst`` (browser-playable, seekable).
+
+        Decode-only, so it is near-instant even for hour-long files — used to build
+        the playback preview cache for recorder codecs browsers can't decode
+        (e.g. ADPCM). Raises :class:`TranscodeError` on failure.
+        """
+        if not self.available():
+            raise TranscodeError(f"ffmpeg not found on PATH ({self._s.ffmpeg_path})")
+        if src.resolve() == dst.resolve():
+            raise TranscodeError(f"transcode source and destination are the same file: {src}")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(  # noqa: S603 (configured binary, fixed argv)
+            [
+                self._s.ffmpeg_path,
+                "-y",
+                "-i",
+                str(src),
+                "-c:a",
+                "pcm_s16le",
+                str(dst),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise TranscodeError(f"ffmpeg failed for {src}: {result.stderr.strip()[:500]}")
+
     def to_opus(self, src: Path, dst: Path) -> None:
         """Transcode ``src`` → ``dst`` (Opus). Raises :class:`TranscodeError` on failure."""
         if not self.available():

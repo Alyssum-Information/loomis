@@ -32,6 +32,7 @@ job state; the filesystem holds the heavy bytes.
   voiceprints/                      # (optional) raw embedding blobs if not inlined
   staging/                          # in-flight copies, pre-verification
   quarantine/                       # copies that failed verification
+  cache/preview/<recording_id>.wav  # PCM playback previews (pure cache, safe to delete)
   logs/
 ```
 
