@@ -6,7 +6,35 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **A corrupted recorder file no longer aborts the whole import** (FR-2.1/2.6):
+  a FAT-corrupted directory entry (`OSError: WinError 1392` during enumeration)
+  used to crash `run_backup` for the entire volume, so healthy files were never
+  imported. Per-entry stat failures are now non-fatal — the unreadable entry is
+  counted as an error (its source untouched) and the rest of the volume imports
+  normally; a directory walk that breaks mid-iteration abandons that pattern
+  with a warning and keeps everything already found.
+- **Tests are now isolated from the developer's environment**: `Settings` is a
+  pydantic `BaseSettings`, so `LOOMIS_*` env vars and the real
+  `~/.loomis/config.toml` silently overrode values passed in test code —
+  editing your own config could change test outcomes (and even run the real
+  WhisperX engine inside the suite). An autouse `conftest.py` fixture scrubs
+  the env and points `LOOMIS_CONFIG` at a nonexistent temp path for every test.
+
 ### Added
+- **M5 integrity & resume test coverage** (NFR-2/3, an M5 exit criterion):
+  interruption-and-recovery suites for the safety spine and pipeline —
+  mid-copy device disconnect resumes losslessly on reconnect (staging swept,
+  no partial ledger rows); a quarantined copy re-imports once the corruption
+  clears; a crashed worker's stt job is lease-reclaimed and completes exactly
+  once; stt/diary replays never duplicate transcripts, sidecars, or entries;
+  a failed transcode keeps the original (and `auto_delete` + broken ffmpeg
+  still never loses the verified copy); a populated schema-7 database upgrades
+  losslessly to the latest version, and a failing migration rolls back whole.
+  Plus real-ffmpeg tests for the Transcoder wrapper (opus round-trip, codec
+  probing, validation gates; auto-skipped when ffmpeg is absent). Safety-spine
+  module coverage: db 100 %, backup 93 %, runner 96 %, steps 89 %,
+  transcode 81 %, scheduler 96 %.
 - **M5 settings & egress** (FR-7.7/7.8): `GET /settings` returns the curated
   config (api token removed, `hf_token` masked) plus the current egress state;
   `PATCH /settings` validates a partial update, persists it to `config.toml`

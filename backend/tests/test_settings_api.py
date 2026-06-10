@@ -23,12 +23,6 @@ from loomis.core.events import EventBus, drain
 from loomis.core.models import TranscodePolicy
 
 
-@pytest.fixture(autouse=True)
-def _no_config_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Never let a developer's LOOMIS_CONFIG point PATCH writes at a real file.
-    monkeypatch.delenv("LOOMIS_CONFIG", raising=False)
-
-
 def _settings(tmp_path: Path, **api_overrides: object) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
@@ -73,9 +67,10 @@ def test_patch_applies_live_and_persists(client: TestClient, tmp_path: Path) -> 
     assert body["egress_pending"] == []
 
     # Applied live (no restart) …
-    assert client.get("/api/v1/settings").json()["settings"]["stt"]["language"] == "zh"
-    # … and persisted to config.toml.
-    config = tomllib.loads((tmp_path / "data" / "config.toml").read_text(encoding="utf-8"))
+    envelope = client.get("/api/v1/settings").json()
+    assert envelope["settings"]["stt"]["language"] == "zh"
+    # … and persisted to the config file the API reports (conftest points it at tmp).
+    config = tomllib.loads(Path(envelope["config_path"]).read_text(encoding="utf-8"))
     assert config["stt"]["language"] == "zh"
 
 
@@ -94,7 +89,8 @@ def test_masked_secret_echo_is_a_noop(client: TestClient, tmp_path: Path) -> Non
         "/api/v1/settings", json={"diarize": {"hf_token": "********", "device": "cpu"}}
     )
     assert resp.json()["applied"] == ["diarize.device"]
-    config = tomllib.loads((tmp_path / "data" / "config.toml").read_text(encoding="utf-8"))
+    config_path = Path(client.get("/api/v1/settings").json()["config_path"])
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert "hf_token" not in config.get("diarize", {})
 
 

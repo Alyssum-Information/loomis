@@ -237,11 +237,30 @@ def _default_device_name(kind: DeviceKind, volume: Path, serial: str) -> str:
 
 
 def _iter_audio(volume: Path, globs: list[str]) -> Iterator[Path]:
-    """Yield distinct audio files under ``volume`` matching any glob, skipping ``.loomis``."""
+    """Yield distinct audio files under ``volume`` matching any glob, skipping ``.loomis``.
+
+    Recorder filesystems are routinely dirty — FAT corruption, entries vanishing
+    mid-scan (WinError 1392 et al.) — so per-entry ``stat`` failures must never
+    abort the enumeration. An unreadable entry is still yielded: the per-file
+    handler in :func:`run_backup` stats it again, counts it as an error, and the
+    rest of the volume imports normally.
+    """
     seen: set[Path] = set()
     for pattern in globs:
-        for path in volume.glob(pattern):
-            if path.is_file() and ".loomis" not in path.parts and path not in seen:
+        walker = volume.glob(pattern)
+        while True:
+            try:
+                path = next(walker)
+            except StopIteration:
+                break
+            except OSError as exc:  # the directory walk itself broke; salvage the rest
+                log.warning("enumeration aborted for pattern %r on %s: %s", pattern, volume, exc)
+                break
+            try:
+                is_file = path.is_file()
+            except OSError:
+                is_file = True  # unreadable entry → let run_backup count the error
+            if is_file and ".loomis" not in path.parts and path not in seen:
                 seen.add(path)
                 yield path
 
