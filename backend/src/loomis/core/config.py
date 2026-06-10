@@ -153,6 +153,35 @@ class TranscodeSettings(BaseModel):
     ffprobe_path: str = "ffprobe"
 
 
+SyncScope = Literal["audio", "markdown", "db"]
+
+
+def _default_scope() -> list[SyncScope]:
+    return ["audio", "markdown"]
+
+
+class CloudRemote(BaseModel):
+    """One rclone remote to push to (see docs/features/06, ADR-0004).
+
+    ``name`` must match a remote configured via ``rclone config``; credentials
+    live in rclone's own config, never here (NFR-9).
+    """
+
+    name: str
+    scope: list[SyncScope] = Field(default_factory=_default_scope)
+    direction: Literal["push"] = "push"  # push-only in v1; never deletes local (FR-8.4)
+    dest: str = "loomis"  # path prefix on the remote
+
+
+class CloudSettings(BaseModel):
+    """Opt-in cloud sync (FR-8). Nothing leaves the machine while ``enabled`` is false."""
+
+    enabled: bool = False
+    rclone_path: str = "rclone"
+    schedule_cron: str = ""  # empty = manual only; the daemon scheduler consumes this
+    remotes: list[CloudRemote] = Field(default_factory=list)
+
+
 class JobsSettings(BaseModel):
     """Durable job runner: pool size, polling, retry, and crash-reclaim policy."""
 
@@ -183,6 +212,7 @@ class Settings(BaseSettings):
     summaries: SummariesSettings = Field(default_factory=SummariesSettings)
     transcode: TranscodeSettings = Field(default_factory=TranscodeSettings)
     jobs: JobsSettings = Field(default_factory=JobsSettings)
+    cloud: CloudSettings = Field(default_factory=CloudSettings)
 
     @classmethod
     def settings_customise_sources(

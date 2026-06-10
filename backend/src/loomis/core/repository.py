@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 from typing import TypedDict
 
 from .models import (
+    CloudSyncEntry,
     Device,
     DiaryEntry,
     Job,
@@ -808,6 +809,35 @@ def split_recording_to_speaker(
         "UPDATE voiceprints SET speaker_id = ? WHERE speaker_id = ? AND source_recording_id = ?",
         (new_speaker_id, speaker_id, recording_id),
     )
+
+
+# --- cloud sync log (FR-8.3) ---
+
+
+def start_cloud_sync(conn: sqlite3.Connection, remote: str, scope: list[str]) -> int:
+    """Open a sync-history row (result stays NULL until finished); returns its id."""
+    cur = conn.execute(
+        "INSERT INTO cloud_sync_log (remote, scope) VALUES (?, ?)",
+        (remote, json.dumps(scope)),
+    )
+    return int(cur.lastrowid or 0)
+
+
+def finish_cloud_sync(
+    conn: sqlite3.Connection, log_id: int, result: str, stats: dict[str, object]
+) -> None:
+    conn.execute(
+        "UPDATE cloud_sync_log SET finished_at = datetime('now'), result = ?, stats_json = ? "
+        "WHERE id = ?",
+        (result, json.dumps(stats, ensure_ascii=False), log_id),
+    )
+
+
+def list_cloud_sync_log(conn: sqlite3.Connection, *, limit: int = 50) -> list[CloudSyncEntry]:
+    rows = conn.execute(
+        "SELECT * FROM cloud_sync_log ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [CloudSyncEntry.from_row(r) for r in rows]
 
 
 def requeue_job(conn: sqlite3.Connection, job_id: int) -> bool:

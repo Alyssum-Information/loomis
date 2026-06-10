@@ -342,6 +342,25 @@ class RecordPipeline(BaseModel):
     updated_at: str | None = None
 
 
+class CloudSyncEntry(BaseModel):
+    """One push to one remote — the durable sync history (FR-8.3, 05 §4.14)."""
+
+    id: int | None = None
+    remote: str
+    scope: list[str] = Field(default_factory=list)
+    started_at: str | None = None
+    finished_at: str | None = None
+    result: str | None = None  # ok | error; None while running
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> Self:
+        d = dict(row)
+        d["scope"] = _loads(d.get("scope"), [])
+        d["stats"] = _loads(d.pop("stats_json", None), {})
+        return cls.model_validate(d)
+
+
 class Quarantine(BaseModel):
     """A copy that failed SHA-256 verification — kept for inspection, source never deleted."""
 

@@ -7,6 +7,19 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **M5 cloud sync** (FR-8.1–8.4, ADR-0004): opt-in, push-only off-machine backup
+  via rclone. Per-remote scopes — `audio` (library), `markdown` (diary +
+  meetings), `db` (a consistent `VACUUM INTO` snapshot, never the live WAL
+  file) — pushed to `<remote>:<dest>/…`. Push-only is mechanical: the wrapper
+  only issues `rclone copy` (which cannot delete on either side); `rclone sync`
+  is not exposed. Manual `POST /cloud/sync` enqueues a durable `cloud_sync` job
+  (per-remote or all); `GET /cloud/remotes` reports status, `GET /cloud/log`
+  the per-remote history (new `cloud_sync_log` table, migration 009). The
+  handler re-checks `[cloud].enabled` at execution time, so a job enqueued
+  before disabling never runs. New `cloud.synced` WebSocket event; the Sources
+  screen gains a Cloud backup card (status, per-remote "Sync now", last
+  result). Disabled by default — nothing leaves the machine until
+  `[cloud].enabled = true`; credentials stay in rclone's own config (NFR-9).
 - **M4 folder sources** (FR-1.11–1.13, ADR-0012): any local folder — a phone's
   Syncthing/OneDrive/iCloud sync target, a lifelogger's export folder, a manual
   drop folder — registers as a first-class source beside USB recorders. The

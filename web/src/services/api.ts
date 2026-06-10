@@ -306,6 +306,41 @@ export function splitSpeaker (id: number, recordingId: string): Promise<JobAccep
   return sendJson<JobAccepted>('POST', `/speakers/${id}/split`, { recording_id: recordingId })
 }
 
+// --- cloud sync (FR-8) ---
+
+export interface CloudRemote {
+  name: string
+  scope: string[]
+  direction: string
+  dest: string
+}
+
+export interface CloudStatus {
+  enabled: boolean
+  rclone_available: boolean
+  remotes: CloudRemote[]
+}
+
+export interface CloudSyncEntry {
+  id: number
+  remote: string
+  scope: string[]
+  started_at?: string | null
+  finished_at?: string | null
+  result?: string | null
+  stats: Record<string, unknown>
+}
+
+export const getCloudStatus = (): Promise<CloudStatus> => getJson<CloudStatus>('/cloud/remotes')
+
+export function syncCloud (remote?: string): Promise<JobAccepted> {
+  return sendJson<JobAccepted>('POST', '/cloud/sync', remote ? { remote } : {})
+}
+
+export function getCloudLog (limit = 20): Promise<CloudSyncEntry[]> {
+  return getJson<CloudSyncEntry[]>('/cloud/log', { limit })
+}
+
 export function retranscribeRecording (id: string): Promise<JobAccepted> {
   return sendJson<JobAccepted>('POST', `/recordings/${id}/retranscribe`)
 }

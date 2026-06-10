@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from ..cloud.sync import handle_cloud_sync
 from ..core import repository
 from ..core.config import Settings
 from ..core.events import EventBus
@@ -476,4 +477,5 @@ HANDLERS: dict[JobType, Handler] = {
     JobType.DIARY_AGGREGATE: handle_diary_aggregate,
     JobType.SPEAKER_MERGE: handle_speaker_merge,
     JobType.SPEAKER_SPLIT: handle_speaker_split,
+    JobType.CLOUD_SYNC: handle_cloud_sync,
 }

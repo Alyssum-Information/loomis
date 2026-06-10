@@ -83,8 +83,10 @@ enabled       = false           # opt-in; nothing leaves the machine until true
 rclone_path   = "rclone"
 schedule_cron = ""              # empty = manual sync only
 
-# Add one block per rclone remote you've configured:
+# Add one block per rclone remote you've configured (`rclone config` first;
+# `name` must match the rclone remote name):
 # [[cloud.remotes]]
 # name      = "onedrive"
-# scope     = ["audio", "markdown"]   # audio | markdown | db
+# scope     = ["audio", "markdown"]   # audio | markdown | db (db = snapshot upload)
 # direction = "push"                  # push-only; never deletes local source
+# dest      = "loomis"                # path prefix on the remote

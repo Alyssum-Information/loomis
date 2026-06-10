@@ -106,6 +106,29 @@ class SpeakerSplit(BaseModel):
     recording_id: str  # the recording to peel off; the speaker is the path id
 
 
+class CloudRemoteOut(BaseModel):
+    """One configured rclone remote, as shown in Settings (FR-8.2)."""
+
+    name: str
+    scope: list[str]
+    direction: str
+    dest: str
+
+
+class CloudStatus(BaseModel):
+    """Cloud sync state for the UI: opt-in flag, binary presence, remotes (FR-8.2)."""
+
+    enabled: bool
+    rclone_available: bool
+    remotes: list[CloudRemoteOut]
+
+
+class CloudSyncRequest(BaseModel):
+    """Manual "sync now" (FR-8.3). ``remote`` limits the push to one remote."""
+
+    remote: str | None = None
+
+
 class RetranscribeRequest(BaseModel):
     """Bulk re-transcription filter (11 §3.2). Empty body = every transcribed recording.
 

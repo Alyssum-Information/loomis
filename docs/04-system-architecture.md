@@ -231,6 +231,7 @@ loomis/
       pipeline/            # job runner + every pipeline step (features 02-05):
                            #   runner, steps, transcode, stt, diarize,
                            #   speakerid, classify, summarize, llm
+      cloud/               # opt-in rclone push (feature 06): rclone, sync
       api/                 # HTTP surface (11): app factory, routes, schemas
     tests/
   web/                     # Vue 3 + Vuetify SPA (Vite)
@@ -241,8 +242,6 @@ loomis/
   README.md  LICENSE  ...
 ```
 
-Cloud sync (feature 06) will land as `cloud/` beside `ingest/` when M5 builds
-it.
 
 The backend is the only writer to SQLite + the file library; the frontend is a
 pure client. Tooling lives per side: `backend/pyproject.toml`

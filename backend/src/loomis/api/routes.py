@@ -30,14 +30,27 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..cloud.rclone import Rclone
 from ..core import db, repository
 from ..core.config import Settings
 from ..core.events import EventBus
-from ..core.models import Device, DiaryEntry, Job, JobType, Meeting, Recording, Speaker
+from ..core.models import (
+    CloudSyncEntry,
+    Device,
+    DiaryEntry,
+    Job,
+    JobType,
+    Meeting,
+    Recording,
+    Speaker,
+)
 from ..ingest import backup
 from ..ingest.watcher import removable_volumes
 from ..pipeline.transcode import TranscodeError, Transcoder
 from .schemas import (
+    CloudRemoteOut,
+    CloudStatus,
+    CloudSyncRequest,
     DeviceRegister,
     DeviceUpdate,
     JobAccepted,
@@ -386,6 +399,48 @@ def resummarize_diary(date: str, conn: Conn) -> JobAccepted:
     """Re-run the day's aggregation (FR-6.8). Idempotent: it replaces the entry."""
     job_id = repository.enqueue_job(conn, JobType.DIARY_AGGREGATE, {"date": date})
     return JobAccepted(job_id=job_id)
+
+
+# --- cloud sync (3.5, FR-8) ---
+
+
+@router.get("/cloud/remotes", response_model=CloudStatus)
+def cloud_remotes(settings: AppSettings) -> CloudStatus:
+    """Configured remotes + whether sync can actually run (FR-8.2)."""
+    cloud = settings.cloud
+    return CloudStatus(
+        enabled=cloud.enabled,
+        rclone_available=Rclone(cloud.rclone_path).available(),
+        remotes=[
+            CloudRemoteOut(name=r.name, scope=list(r.scope), direction=r.direction, dest=r.dest)
+            for r in cloud.remotes
+        ],
+    )
+
+
+@router.post("/cloud/sync", response_model=JobAccepted, status_code=202)
+def cloud_sync_now(body: CloudSyncRequest, conn: Conn, settings: AppSettings) -> JobAccepted:
+    """Manual "sync now" (FR-8.3): enqueue a push job; progress over the WebSocket.
+
+    Refused while cloud sync is disabled — enabling it is an explicit config
+    action that crosses the privacy boundary (NFR-1, FR-7.8).
+    """
+    cloud = settings.cloud
+    if not cloud.enabled:
+        raise HTTPException(status_code=409, detail="cloud sync is disabled")
+    if not cloud.remotes:
+        raise HTTPException(status_code=409, detail="no cloud remotes configured")
+    if body.remote is not None and all(r.name != body.remote for r in cloud.remotes):
+        raise HTTPException(status_code=404, detail=f"unknown remote: {body.remote}")
+    payload: dict[str, object] = {} if body.remote is None else {"remote": body.remote}
+    job_id = repository.enqueue_job(conn, JobType.CLOUD_SYNC, payload)
+    return JobAccepted(job_id=job_id)
+
+
+@router.get("/cloud/log", response_model=list[CloudSyncEntry])
+def cloud_sync_log(conn: Conn, limit: Limit = 50) -> list[CloudSyncEntry]:
+    """Sync history, newest first (FR-8.3)."""
+    return repository.list_cloud_sync_log(conn, limit=limit)
 
 
 @router.post("/jobs/{job_id}/retry", response_model=JobAccepted, status_code=202)
