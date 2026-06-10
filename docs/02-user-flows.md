@@ -75,7 +75,8 @@ never enters the library.
    hash) and check it against the backup **ledger** (`recordings` table).
 4. 🟢 Copy *new* files into the local **staging** area.
 5. ⚠️ Verify the copy by SHA-256 before the file is considered backed up.
-6. 🟢 (Optional) Transcode to Opus into the library; keep/discard original per config.
+6. 🟢 Transcode to Opus into the library (default; keep/discard original per
+   policy — [ADR-0013](adr/0013-transcode-by-default.md)).
 7. ⚠️ (Optional) If auto-delete is on, delete the source file **only after** the
    verified backup (and, if transcoding, after the transcode also verifies).
 8. 🟢 Enqueue a processing job per imported recording (**§3**).

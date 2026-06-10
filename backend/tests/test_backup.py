@@ -13,6 +13,7 @@ import pytest
 
 from loomis.core import db, repository
 from loomis.core.config import BackupSettings, CoreSettings, Settings
+from loomis.core.models import TranscodePolicy
 from loomis.core.storage import sha256_file
 from loomis.ingest import backup
 from loomis.ingest.devicefile import DeviceFile, device_file_path
@@ -40,7 +41,11 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
         # tmp_path sources look like folders; skip the sync settle window in tests
-        backup=BackupSettings(folder_settle_seconds=0.0),
+        backup=BackupSettings(
+            folder_settle_seconds=0.0,
+            # fake RIFF bytes can't survive a real ffmpeg transcode; keep originals
+            transcode_policy=TranscodePolicy.KEEP_ORIGINAL,
+        ),
     )
 
 
@@ -307,8 +312,10 @@ def test_cli_backup_entry_point(
     from loomis.cli import main
 
     monkeypatch.setenv("LOOMIS_CORE__DATA_DIR", str(tmp_path / "clidata"))
-    # The temp volume registers as a folder source; skip the sync settle window.
+    # The temp volume registers as a folder source; skip the sync settle window,
+    # and keep originals (fake RIFF bytes can't survive a real ffmpeg transcode).
     monkeypatch.setenv("LOOMIS_BACKUP__FOLDER_SETTLE_SECONDS", "0")
+    monkeypatch.setenv("LOOMIS_BACKUP__TRANSCODE_POLICY", "keep_original")
     rc = main(["backup", str(volume)])
 
     assert rc == 0
@@ -334,3 +341,22 @@ def test_cli_survives_malformed_device_json(
     assert path.read_text(encoding="utf-8") == "{ this is not valid json"  # untouched
     c = sqlite3.connect(tmp_path / "clidata2" / "loomis.db")
     assert c.execute("SELECT COUNT(*) FROM recordings").fetchone()[0] == 0
+
+
+def test_default_policy_transcodes_and_enqueues_transcode_first(
+    conn: sqlite3.Connection, volume: Path, tmp_path: Path
+) -> None:
+    # Product default (ADR-0013): registration writes transcode_only into
+    # device.json and a new import enters the pipeline at the transcode step.
+    default_settings = Settings(
+        core=CoreSettings(data_dir=tmp_path / "data"),
+        backup=BackupSettings(folder_settle_seconds=0.0),  # policy left at default
+    )
+    device = backup.register_or_load_device(conn, volume, default_settings)
+    assert device.transcode_policy.value == "transcode_only"
+    assert DeviceFile.load(device_file_path(volume)).transcode.policy.value == "transcode_only"
+
+    report = backup.run_backup(conn, device, volume, default_settings)
+    assert report.imported == 1
+    job = conn.execute("SELECT type FROM jobs ORDER BY id DESC LIMIT 1").fetchone()
+    assert job["type"] == "transcode"

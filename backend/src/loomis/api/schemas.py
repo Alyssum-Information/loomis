@@ -106,6 +106,17 @@ class SpeakerSplit(BaseModel):
     recording_id: str  # the recording to peel off; the speaker is the path id
 
 
+class RetranscribeRequest(BaseModel):
+    """Bulk re-transcription filter (11 §3.2). Empty body = every transcribed recording.
+
+    ``not_language`` is the common case: after pinning ``[stt].language``, re-run
+    everything whose transcript was detected as a *different* language.
+    """
+
+    language: str | None = None  # only transcripts detected as this language
+    not_language: str | None = None  # only transcripts NOT in this language
+
+
 class JobAccepted(BaseModel):
     """202 response for commands that enqueue background work (11 §1)."""
 

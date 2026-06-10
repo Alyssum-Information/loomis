@@ -35,9 +35,11 @@ class DeviceBackup(BaseModel):
 
 class DeviceTranscode(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    policy: TranscodePolicy = TranscodePolicy.KEEP_ORIGINAL
+    # Hand-authored device.json without a transcode block gets the product default:
+    # validated Opus replaces the original in the library (ADR-0013).
+    policy: TranscodePolicy = TranscodePolicy.TRANSCODE_ONLY
     codec: str = "opus"
-    bitrate: str = "16k"
+    bitrate: str = "32k"
     application: str = "voip"
 
 

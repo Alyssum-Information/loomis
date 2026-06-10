@@ -71,8 +71,10 @@ class BackupSettings(BaseModel):
     staging_dir: str = "staging"  # relative to data_dir
     verify_hash: Literal["sha256"] = "sha256"  # integrity gate; only sha256 is supported
     auto_delete_after_backup: bool = False  # global default; device.json may override
-    # validated against the enum; a device.json may still override per device:
-    transcode_policy: TranscodePolicy = TranscodePolicy.KEEP_ORIGINAL
+    # Default: keep only the validated Opus in the library (ADR-0013) — ~10× smaller,
+    # browser-playable, and a negligible STT cost at 32 kbps. keep_original /
+    # transcode_keep remain available globally and per source (FR-3.4).
+    transcode_policy: TranscodePolicy = TranscodePolicy.TRANSCODE_ONLY
     audio_globs: list[str] = Field(default_factory=lambda: list(_DEFAULT_AUDIO_GLOBS))
 
 
@@ -83,6 +85,9 @@ class SttSettings(BaseModel):
     model: str = "large-v3"
     device: str = "auto"  # auto | cuda | cpu
     compute_type: str = "auto"  # auto | float16 | int8 | ...
+    # Whisper detects the language from the first ~30 s of each file, so clips that
+    # open with silence/noise misdetect easily. Set your daily language (e.g. "zh")
+    # unless you genuinely record in many languages (feature 03 §3).
     language: str = "auto"  # auto-detect, or force e.g. "zh"
 
 
@@ -137,10 +142,12 @@ class SummariesSettings(BaseModel):
 
 
 class TranscodeSettings(BaseModel):
-    """Opus transcode parameters (see docs/features/02, ADR-0008)."""
+    """Opus transcode parameters (see docs/features/02, ADR-0008/0013)."""
 
     codec: str = "opus"
-    bitrate: str = "16k"
+    # 32k: speech stays clear and Whisper WER is near-uncompressed; below ~24k the
+    # transcription cost starts to show (ADR-0013). ~14 MB/hour mono.
+    bitrate: str = "32k"
     application: str = "voip"
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"

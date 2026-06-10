@@ -25,11 +25,13 @@ folder_settle_seconds    = 10              # import folder files only after mtim
 staging_dir              = "staging"
 verify_hash              = "sha256"        # integrity gate before source deletion
 auto_delete_after_backup = false           # delete from device only after verified copy
-transcode_policy         = "keep_original" # keep_original | transcode_keep | transcode_only
+# Default: keep only the validated Opus (~10x smaller, browser-playable; ADR-0013).
+# Use "transcode_keep" to store both, or "keep_original" for bit-exact archives.
+transcode_policy         = "transcode_only" # keep_original | transcode_keep | transcode_only
 
 [transcode]
 codec       = "opus"
-bitrate     = "16k"          # 12k–24k typical for speech
+bitrate     = "32k"          # STT-safe floor; below ~24k transcription quality drops
 application = "voip"
 ffmpeg_path = "ffmpeg"
 
@@ -38,7 +40,10 @@ engine       = "whisperx"
 model        = "large-v3"    # use medium/small on CPU-only machines
 device       = "auto"        # auto | cuda | cpu
 compute_type = "auto"
-language     = "auto"        # or force, e.g. "zh"
+# RECOMMENDED: set your daily language (e.g. "zh"). Auto-detection reads only the
+# first ~30s of each file, so clips starting with silence/noise often misdetect
+# and get transcribed in the wrong language entirely.
+language     = "auto"        # e.g. "zh" | "en" | ... ; "auto" = detect per file
 
 [diarize]
 engine       = "pyannote"       # pyannote (default) | null

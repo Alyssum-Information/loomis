@@ -61,10 +61,10 @@ kinds register into the same `devices` table and feed the same safety spine.
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-3.1 | Optionally transcode imported audio to Opus to save space. | M |
+| FR-3.1 | Transcode imported audio to Opus (default on, per [ADR-0013](adr/0013-transcode-by-default.md)); keeping originals is a policy choice. | M |
 | FR-3.2 | Make bitrate/quality and the speech-optimized (`voip`) profile configurable. | S |
 | FR-3.3 | Verify the transcode produced valid, decodable audio before deleting any original. | M |
-| FR-3.4 | Allow per-device override of the global transcode policy. | S |
+| FR-3.4 | Allow per-source override of the global transcode policy (incl. keeping originals). | S |
 
 ### FR-4 Transcription
 *Spec: [features/03](features/03-transcription.md)*
