@@ -221,6 +221,21 @@ ALTER TABLE devices ADD COLUMN source_path TEXT;
 ALTER TABLE speakers ADD COLUMN suggested_name TEXT;
 """
 
+# 009 — M5 cloud sync: a durable record of every push (FR-8.3, 05 §4.14), so the
+# UI can show sync history and failures are queryable, not just logged.
+_MIGRATION_009 = """
+CREATE TABLE cloud_sync_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    remote      TEXT NOT NULL,                       -- rclone remote name
+    scope       TEXT NOT NULL DEFAULT '[]',          -- JSON list: audio/markdown/db
+    started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT,
+    result      TEXT,                                -- ok | error
+    stats_json  TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX idx_cloud_sync_log_started ON cloud_sync_log (started_at);
+"""
+
 MIGRATIONS: Sequence[tuple[int, str]] = (
     (1, _MIGRATION_001),
     (2, _MIGRATION_002),
@@ -230,6 +245,7 @@ MIGRATIONS: Sequence[tuple[int, str]] = (
     (6, _MIGRATION_006),
     (7, _MIGRATION_007),
     (8, _MIGRATION_008),
+    (9, _MIGRATION_009),
 )
 
 

@@ -121,6 +121,60 @@
       </v-col>
     </v-row>
 
+    <!-- Cloud backup (FR-8): opt-in; everything stays local until [cloud].enabled. -->
+    <v-card class="mt-6">
+      <v-card-title class="d-flex align-center ga-2">
+        <v-icon size="small">mdi-cloud-upload-outline</v-icon>
+        Cloud backup
+
+        <v-chip
+          :color="cloud?.enabled ? 'warning' : 'success'"
+          label
+          size="x-small"
+        >
+          {{ cloud?.enabled ? 'enabled — data leaves this machine' : 'off (local-first)' }}
+        </v-chip>
+      </v-card-title>
+
+      <v-card-text v-if="!cloud?.enabled" class="text-medium-emphasis">
+        Disabled by default. Configure rclone remotes and set
+        <code>[cloud].enabled = true</code> in <code>config.toml</code> to push the
+        library off-machine (push-only; never deletes local data).
+      </v-card-text>
+
+      <template v-else>
+        <v-card-text>
+          <v-alert
+            v-if="cloud && !cloud.rclone_available"
+            class="mb-3"
+            type="warning"
+            variant="tonal"
+          >
+            rclone was not found on PATH — install it and run <code>rclone config</code>.
+          </v-alert>
+
+          <div v-for="r in cloud.remotes" :key="r.name" class="d-flex align-center mb-2">
+            <strong>{{ r.name }}</strong>
+            <span class="text-medium-emphasis ml-2">→ {{ r.dest }} ({{ r.scope.join(', ') }})</span>
+
+            <v-spacer />
+
+            <v-btn size="small" variant="tonal" @click="syncNow(r.name)">Sync now</v-btn>
+          </div>
+
+          <div v-if="cloudLog.length > 0" class="text-caption text-medium-emphasis mt-3">
+            Last sync: {{ cloudLog[0].remote }} ·
+            {{ cloudLog[0].result ?? 'running' }} ·
+            {{ cloudLog[0].finished_at ?? cloudLog[0].started_at }}
+          </div>
+        </v-card-text>
+
+        <v-card-actions>
+          <v-btn size="small" variant="text" @click="syncNow()">Sync all remotes</v-btn>
+        </v-card-actions>
+      </template>
+    </v-card>
+
     <v-dialog v-model="addOpen" max-width="520">
       <v-card>
         <v-card-title>Register a source</v-card-title>
@@ -162,11 +216,16 @@
 <script lang="ts" setup>
   import { onMounted, ref } from 'vue'
   import {
+    type CloudStatus,
+    type CloudSyncEntry,
     type Device,
+    getCloudLog,
+    getCloudStatus,
     getPendingDevices,
     listDevices,
     type PendingDevice,
     registerDevice,
+    syncCloud,
     unregisterDevice,
     updateDevice,
   } from '@/services/api'
@@ -185,6 +244,9 @@
   const addVolume = ref('')
   const addName = ref('')
 
+  const cloud = ref<CloudStatus | null>(null)
+  const cloudLog = ref<CloudSyncEntry[]>([])
+
   const policies = ['keep_original', 'transcode_keep', 'transcode_only']
 
   async function refresh (): Promise<void> {
@@ -198,6 +260,8 @@
         }
       }
       pending.value = await getPendingDevices()
+      cloud.value = await getCloudStatus()
+      if (cloud.value.enabled) cloudLog.value = await getCloudLog(1)
       error.value = null
     } catch (error_) {
       error.value = error_ instanceof Error ? error_.message : String(error_)
@@ -238,10 +302,14 @@
     void act(() => unregisterDevice(id))
   }
 
+  function syncNow (remote?: string): void {
+    void act(() => syncCloud(remote))
+  }
+
   onMounted(() => {
     refresh()
     events.on(event => {
-      if (event.type === 'device.connected') refresh()
+      if (event.type === 'device.connected' || event.type === 'cloud.synced') refresh()
     })
   })
 </script>

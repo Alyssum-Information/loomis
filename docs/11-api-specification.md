@@ -89,8 +89,9 @@ a typed client.
 | POST | `/jobs/{id}/retry` | retry a failed step | FR-7.6 |
 | POST | `/jobs/retry-all` | requeue every failed/parked step | FR-7.6 |
 | GET | `/settings` / PATCH `/settings` | read/update config (egress-flagged) | FR-7.7/7.8 |
-| GET | `/cloud/remotes` | configured rclone remotes | FR-8.2 |
-| POST | `/cloud/sync` | trigger a sync (→ job) | FR-8.3 |
+| GET | `/cloud/remotes` | cloud status: enabled flag, rclone availability, configured remotes | FR-8.2 |
+| POST | `/cloud/sync` | trigger a push (→ job); body `{remote?}` limits to one remote; `409` while `[cloud].enabled` is false | FR-8.3 |
+| GET | `/cloud/log` | sync history (per-remote result + stats), newest first | FR-8.3 |
 | GET | `/health` | daemon + models + pending-egress status | FR-7.6/7.8 |
 
 ## 4. WebSocket (`/api/v1/ws`)
@@ -104,6 +105,7 @@ A single channel pushes events so the UI reflects backend state without polling
 { "type": "device.connected","data": { "device_id?", "volume", "registered": false } }
 { "type": "diary.updated",   "data": { "date" } }
 { "type": "speaker.updated", "data": { "speaker_id" } }
+{ "type": "cloud.synced",    "data": { "remote" } }
 { "type": "egress.pending",  "data": { "kind": "cloud_sync|cloud_llm", "detail" } }
 ```
 

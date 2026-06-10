@@ -120,9 +120,10 @@ enabled = false                 # opt-in; nothing leaves the machine until true
 rclone_path = "rclone"
 schedule_cron = ""              # empty = manual only
 [[cloud.remotes]]
-name = "onedrive"
-scope = ["audio", "markdown"]   # audio | markdown | db
+name = "onedrive"               # must match a remote from `rclone config`
+scope = ["audio", "markdown"]   # audio | markdown | db (db = consistent snapshot)
 direction = "push"              # push-only; never deletes local
+dest = "loomis"                 # path prefix on the remote
 ```
 
 ## 3. Security-sensitive settings
