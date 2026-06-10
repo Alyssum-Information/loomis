@@ -60,6 +60,8 @@ a typed client.
 | GET | `/recordings/{id}` | recording detail + status |
 | GET | `/recordings/{id}/transcript` | segments (speaker-labeled, timestamped) |
 | GET | `/recordings/{id}/audio` | stream playable audio (range requests) for the player; recorder codecs browsers can't decode (e.g. ADPCM WAV) are decoded once into a local PCM preview cache and served from there |
+| POST | `/recordings/{id}/retranscribe` | re-run STT + everything downstream for one recording (→ job); use after fixing `[stt].language` |
+| POST | `/recordings/retranscribe` | bulk re-transcription; body `{language?, not_language?}` filters by the transcript's detected language (e.g. `{"not_language": "zh"}` = every misdetected file) |
 
 ### 3.3 Timeline, diary & meetings
 | Method | Path | Purpose | Traces |

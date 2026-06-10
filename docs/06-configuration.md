@@ -49,11 +49,13 @@ folder_settle_seconds = 10      # import a folder file only after its mtime is t
 staging_dir = "staging"
 verify_hash = "sha256"          # integrity gate before any source deletion
 auto_delete_after_backup = false
-transcode_policy = "keep_original"   # keep_original | transcode_keep | transcode_only
+# default: validated Opus replaces the original (ADR-0013); keep_original /
+# transcode_keep give bit-exact archives per source or globally
+transcode_policy = "transcode_only"  # keep_original | transcode_keep | transcode_only
 
 [transcode]
 codec = "opus"
-bitrate = "16k"
+bitrate = "32k"                 # STT-safe floor (ADR-0013); below ~24k WER rises
 application = "voip"
 ffmpeg_path = "ffmpeg"
 
@@ -62,7 +64,9 @@ engine = "whisperx"             # whisperx (default) | null  (null = offline stu
 model = "large-v3"
 device = "auto"                 # auto | cuda | cpu
 compute_type = "auto"
-language = "auto"               # auto-detect; or force e.g. "zh"
+# RECOMMENDED: set your daily language (e.g. "zh"). Detection reads only the first
+# ~30s per file, so clips opening with silence/noise misdetect easily (feature 03 §3).
+language = "auto"               # e.g. "zh" | "en" | ...; "auto" = detect per file
 # whisperx needs ffmpeg on PATH to read audio. ffmpeg + whisperx are installed by
 # the repo-root install script (./install.ps1 / ./install.sh) — they are baseline,
 # not optional. Use engine = "null" only to run the pipeline without transcription.

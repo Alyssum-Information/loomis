@@ -25,8 +25,32 @@ to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and surface in the Speakers screen as a one-click **Accept** chip; accepting
   (or any manual rename) clears the suggestion. New `speaker.updated` WebSocket
   event. Migration 008 adds the column.
+- **Re-transcription endpoints** (FR-4.2): `POST /recordings/{id}/retranscribe`
+  (surfaced as a **Re-transcribe** button on the Recording page) and bulk
+  `POST /recordings/retranscribe` with a detected-language filter
+  (`{"not_language": "zh"}` re-runs every misdetected file). STT re-runs
+  idempotently and rebuilds everything downstream — diarization, speaker
+  identity, and the affected days' diaries/meetings.
 
 ### Changed
+- **Transcode to Opus by default** (FR-3.1, ADR-0013): new imports are now
+  transcoded to validated 32 kbps Opus (`voip`) and the library original is
+  replaced — ~10× smaller, browser-playable (no preview cache for new imports),
+  and ≈0–2 % relative WER cost per published measurements (degradation only
+  appears below ~24 kbps, hence the bitrate bump from 16k). The safety spine is
+  unchanged: deletion still requires a decoded, duration-checked Opus, and the
+  job parks instead of deleting when ffprobe is unavailable. Bit-exact archives
+  remain one setting away: `transcode_keep` / `keep_original`, globally
+  (`[backup].transcode_policy`) or per source (`device.json`).
+- **STT language guidance** (FR-4.2): Whisper detects the language from the
+  first ~30 s of each file, so clips opening with silence/noise misdetect
+  easily. `[stt].language` (e.g. `"zh"`) is now the documented, recommended
+  setting for single-language users — faster and immune to misdetection;
+  config reference, example config, and feature 03 updated. Preprocessing
+  (VAD/segmentation, resampling, denoise, loudness) was evaluated: WhisperX
+  already runs pyannote VAD and 16 kHz mono normalization internally; denoise
+  and loudness normalization measured neutral-to-harmful and stay out of the
+  default path (feature 03 §3.1).
 - **Backend restructured into packages** matching the architecture doc
   (04 §12): `core/` (config, db, models, repository, storage, events, vectors),
   `ingest/` (watcher, devicefile, backup), `pipeline/` (runner, steps, and the

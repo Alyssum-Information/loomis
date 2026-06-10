@@ -84,7 +84,7 @@ class Device(BaseModel):
     owner_speaker_id: int | None = None
     audio_globs: list[str] = Field(default_factory=list)
     auto_delete: bool = False
-    transcode_policy: TranscodePolicy = TranscodePolicy.KEEP_ORIGINAL
+    transcode_policy: TranscodePolicy = TranscodePolicy.TRANSCODE_ONLY  # ADR-0013 default
     transcode_opts: dict[str, Any] = Field(default_factory=dict)
     min_free_bytes: int = 0  # refuse to import if it would leave less free than this
     registered: bool = True  # only registered devices auto-import (FR-1.9)

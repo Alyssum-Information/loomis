@@ -22,11 +22,13 @@ from loomis.core.config import (
     SttSettings,
 )
 from loomis.core.models import (
+    Device,
     JobStatus,
     JobType,
     Recording,
     RecordingStatus,
     Segment,
+    TranscodePolicy,
     Transcript,
 )
 from loomis.pipeline.runner import JobRunner
@@ -36,7 +38,11 @@ def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
         # tmp_path sources look like folders; skip the sync settle window in tests
-        backup=BackupSettings(folder_settle_seconds=0.0),
+        backup=BackupSettings(
+            folder_settle_seconds=0.0,
+            # fake RIFF bytes can't survive a real ffmpeg transcode; keep originals
+            transcode_policy=TranscodePolicy.KEEP_ORIGINAL,
+        ),
         api=ApiSettings(run_daemon=False, serve_spa=False),
         stt=SttSettings(engine="null"),
         diarize=DiarizeSettings(engine="null"),
@@ -260,3 +266,73 @@ def test_retry_all_jobs(ctx: tuple[TestClient, Settings]) -> None:
     queued = conn.execute("SELECT COUNT(*) AS n FROM jobs WHERE status = 'queued'").fetchone()["n"]
     conn.close()
     assert queued == 3
+
+
+# --- re-transcription (FR-4.2) ---
+
+
+def _seed_transcribed(
+    conn: sqlite3.Connection, settings: Settings, rec_id: str, language: str
+) -> None:
+    """A done recording with a library file and a transcript in ``language``."""
+    if repository.find_device(conn, "dev-1") is None:
+        repository.insert_device(conn, Device(id="dev-1", name="Recorder"))
+    audio = settings.core.resolved_data_dir / f"{rec_id}.wav"
+    audio.write_bytes(b"RIFFfake")
+    repository.insert_recording(
+        conn,
+        Recording(
+            id=rec_id,
+            device_id="dev-1",
+            source_path=f"{rec_id}.wav",
+            library_path=str(audio),
+            sha256=f"h-{rec_id}",
+            size_bytes=8,
+            recorded_at="2026-06-09T10:00:00+08:00",
+            status=RecordingStatus.DONE,
+        ),
+    )
+    repository.replace_transcript(
+        conn,
+        Transcript(id=f"t-{rec_id}", recording_id=rec_id, engine="null", language=language),
+        [],
+    )
+
+
+def test_retranscribe_single_enqueues_stt(ctx: tuple[TestClient, Settings]) -> None:
+    client, settings = ctx
+    conn = _conn(settings)
+    _seed_transcribed(conn, settings, "rec-1", "en")
+
+    resp = client.post("/api/v1/recordings/rec-1/retranscribe")
+    assert resp.status_code == 202
+    job = conn.execute("SELECT type, payload FROM jobs ORDER BY id DESC LIMIT 1").fetchone()
+    assert job["type"] == "stt"
+    assert "rec-1" in job["payload"]
+
+    assert client.post("/api/v1/recordings/nope/retranscribe").status_code == 404
+    conn.close()
+
+
+def test_retranscribe_bulk_filters_by_detected_language(
+    ctx: tuple[TestClient, Settings],
+) -> None:
+    client, settings = ctx
+    conn = _conn(settings)
+    _seed_transcribed(conn, settings, "rec-zh", "zh")
+    _seed_transcribed(conn, settings, "rec-en", "en")
+    _seed_transcribed(conn, settings, "rec-ja", "ja")
+
+    # The misdetection cleanup path: everything NOT detected as zh.
+    resp = client.post("/api/v1/recordings/retranscribe", json={"not_language": "zh"})
+    assert resp.status_code == 202
+    assert resp.json()["requeued"] == 2
+    payloads = [r["payload"] for r in conn.execute("SELECT payload FROM jobs WHERE type = 'stt'")]
+    assert any("rec-en" in p for p in payloads)
+    assert any("rec-ja" in p for p in payloads)
+    assert not any("rec-zh" in p for p in payloads)
+
+    # Exact-language filter.
+    resp = client.post("/api/v1/recordings/retranscribe", json={"language": "ja"})
+    assert resp.json()["requeued"] == 1
+    conn.close()

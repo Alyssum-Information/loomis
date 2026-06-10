@@ -20,7 +20,7 @@ from loomis.core.config import (
     SttSettings,
 )
 from loomis.core.events import EventBus, drain
-from loomis.core.models import DeviceKind
+from loomis.core.models import DeviceKind, TranscodePolicy
 from loomis.daemon import Daemon
 from loomis.ingest import backup
 from loomis.ingest.devicefile import DeviceFile, device_file_path
@@ -32,6 +32,8 @@ def _settings(tmp_path: Path, **backup_overrides: object) -> Settings:
     defaults: dict[str, object] = {
         "folder_settle_seconds": 0.0,
         "folder_poll_interval_s": 0.05,
+        # fake RIFF bytes can't survive a real ffmpeg transcode; keep originals
+        "transcode_policy": TranscodePolicy.KEEP_ORIGINAL,
     }
     defaults.update(backup_overrides)
     return Settings(

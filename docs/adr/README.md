@@ -25,6 +25,7 @@ supersedes the old one.
 | [0010](0010-python-tooling.md) | Python tooling: uv + ruff + mypy | Accepted |
 | [0011](0011-usb-device-detection.md) | USB detection: poll + native events | Accepted |
 | [0012](0012-folder-sources.md) | Watched folders as first-class ingest sources | Accepted |
+| [0013](0013-transcode-by-default.md) | Transcode imports to Opus by default (32 kbps) | Accepted |
 
 > Decisions reflect the ecosystem as surveyed in **June 2026**; STT/LLM tooling
 > moves fast, so revisit the model/engine choices periodically.

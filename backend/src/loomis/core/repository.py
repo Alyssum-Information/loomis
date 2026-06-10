@@ -660,6 +660,34 @@ def get_transcript(conn: sqlite3.Connection, recording_id: str) -> Transcript | 
     return Transcript.from_row(row) if row is not None else None
 
 
+def transcribed_recording_ids(
+    conn: sqlite3.Connection,
+    *,
+    language: str | None = None,
+    not_language: str | None = None,
+) -> list[str]:
+    """Recording ids that have a transcript, optionally filtered by detected language.
+
+    ``not_language`` selects everything whose transcript came out in a *different*
+    language — the bulk re-transcription target after the user pins
+    ``[stt].language`` (feature 03 §3).
+    """
+    sql = (
+        "SELECT t.recording_id FROM transcripts t "
+        "JOIN recordings r ON r.id = t.recording_id "
+        "WHERE r.library_path IS NOT NULL"
+    )
+    params: list[object] = []
+    if language is not None:
+        sql += " AND t.language = ?"
+        params.append(language)
+    if not_language is not None:
+        sql += " AND (t.language IS NULL OR t.language != ?)"
+        params.append(not_language)
+    rows = conn.execute(sql + " ORDER BY r.imported_at", params).fetchall()
+    return [str(r["recording_id"]) for r in rows]
+
+
 def list_speakers(conn: sqlite3.Connection) -> list[Speaker]:
     rows = conn.execute("SELECT * FROM speakers ORDER BY id").fetchall()
     return [Speaker.from_row(r) for r in rows]

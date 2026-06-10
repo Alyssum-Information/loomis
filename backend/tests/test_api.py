@@ -18,6 +18,7 @@ from loomis.core.models import (
     Recording,
     RecordingStatus,
     Segment,
+    TranscodePolicy,
     Transcript,
 )
 from loomis.pipeline.transcode import TranscodeError, Transcoder
@@ -27,7 +28,11 @@ def _settings(tmp_path: Path) -> Settings:
     return Settings(
         core=CoreSettings(data_dir=tmp_path / "data"),
         # tmp_path sources look like folders; skip the sync settle window in tests
-        backup=BackupSettings(folder_settle_seconds=0.0),
+        backup=BackupSettings(
+            folder_settle_seconds=0.0,
+            # fake RIFF bytes can't survive a real ffmpeg transcode; keep originals
+            transcode_policy=TranscodePolicy.KEEP_ORIGINAL,
+        ),
         api=ApiSettings(run_daemon=False, serve_spa=False),
     )
 

@@ -44,6 +44,7 @@ from .schemas import (
     Page,
     PendingDevice,
     RecordPipeline,
+    RetranscribeRequest,
     RetryResult,
     SearchHit,
     SpeakerMerge,
@@ -346,6 +347,38 @@ def split_speaker(speaker_id: int, body: SpeakerSplit, conn: Conn) -> JobAccepte
         conn, JobType.SPEAKER_SPLIT, {"speaker_id": speaker_id, "recording_id": body.recording_id}
     )
     return JobAccepted(job_id=job_id)
+
+
+@router.post("/recordings/{recording_id}/retranscribe", response_model=JobAccepted, status_code=202)
+def retranscribe_recording(recording_id: str, conn: Conn) -> JobAccepted:
+    """Re-run STT (and everything downstream) for one recording (FR-4.2).
+
+    The pipeline is idempotent end-to-end: STT replaces the transcript, diarize
+    and speaker_id rebuild this recording's labels/voiceprints, and the day's
+    diary/meeting re-aggregate. Use after fixing ``[stt].language`` or upgrading
+    the model.
+    """
+    rec = repository.get_recording(conn, recording_id)
+    if rec is None or rec.library_path is None:
+        raise HTTPException(status_code=404, detail="recording not found or has no audio")
+    job_id = repository.enqueue_job(conn, JobType.STT, {"recording_id": recording_id})
+    return JobAccepted(job_id=job_id)
+
+
+@router.post("/recordings/retranscribe", response_model=RetryResult, status_code=202)
+def retranscribe_bulk(body: RetranscribeRequest, conn: Conn) -> RetryResult:
+    """Bulk re-transcription with an optional detected-language filter (FR-4.2).
+
+    ``{"not_language": "zh"}`` re-runs every recording whose transcript was
+    detected as anything other than Chinese — the misdetection cleanup path
+    after pinning ``[stt].language``.
+    """
+    rec_ids = repository.transcribed_recording_ids(
+        conn, language=body.language, not_language=body.not_language
+    )
+    for rec_id in rec_ids:
+        repository.enqueue_job(conn, JobType.STT, {"recording_id": rec_id})
+    return RetryResult(requeued=len(rec_ids))
 
 
 @router.post("/diary/{date}/resummarize", response_model=JobAccepted, status_code=202)

@@ -306,6 +306,17 @@ export function splitSpeaker (id: number, recordingId: string): Promise<JobAccep
   return sendJson<JobAccepted>('POST', `/speakers/${id}/split`, { recording_id: recordingId })
 }
 
+export function retranscribeRecording (id: string): Promise<JobAccepted> {
+  return sendJson<JobAccepted>('POST', `/recordings/${id}/retranscribe`)
+}
+
+/** Bulk re-transcription; e.g. { not_language: 'zh' } re-runs every misdetected file. */
+export function retranscribeAll (
+  body: { language?: string, not_language?: string } = {},
+): Promise<{ requeued: number }> {
+  return sendJson<{ requeued: number }>('POST', '/recordings/retranscribe', body)
+}
+
 export function retryJob (id: number): Promise<JobAccepted> {
   return sendJson<JobAccepted>('POST', `/jobs/${id}/retry`)
 }

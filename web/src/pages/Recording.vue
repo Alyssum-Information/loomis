@@ -15,10 +15,36 @@
     <template v-else-if="recording">
       <h2 class="text-h6 mb-1">Recording {{ recording.id }}</h2>
 
-      <div class="text-medium-emphasis mb-4">
-        {{ recording.status }} · {{ recording.recorded_at ?? recording.imported_at }}
+      <div class="d-flex align-center mb-4">
+        <span class="text-medium-emphasis">
+          {{ recording.status }} · {{ recording.recorded_at ?? recording.imported_at }}
+        </span>
+
         <v-chip v-if="recording.kind" class="ml-2" label size="x-small">{{ recording.kind }}</v-chip>
+
+        <v-spacer />
+
+        <v-btn
+          :loading="retranscribing"
+          prepend-icon="mdi-refresh"
+          size="small"
+          variant="tonal"
+          @click="retranscribe"
+        >
+          Re-transcribe
+        </v-btn>
       </div>
+
+      <v-alert
+        v-if="notice"
+        class="mb-4"
+        closable
+        type="info"
+        variant="tonal"
+        @click:close="notice = null"
+      >
+        {{ notice }}
+      </v-alert>
 
       <audio
         ref="audio"
@@ -79,6 +105,7 @@
     getTranscript,
     listSpeakers,
     type Recording,
+    retranscribeRecording,
     type Segment,
   } from '@/services/api'
 
@@ -94,6 +121,8 @@
 
   const playing = ref(false)
   const activeIdx = ref(-1)
+  const retranscribing = ref(false)
+  const notice = ref<string | null>(null)
 
   function speakerLabel (seg: Segment): string {
     if (seg.speaker_id != null) return speakerNames.value[seg.speaker_id] ?? `Speaker ${seg.speaker_id}`
@@ -142,6 +171,19 @@
       return
     }
     playFrom(seg)
+  }
+
+  // Re-run STT + everything downstream (use after fixing [stt].language).
+  async function retranscribe (): Promise<void> {
+    retranscribing.value = true
+    try {
+      await retranscribeRecording(id)
+      notice.value = 'Re-transcription queued — the transcript will refresh when the pipeline finishes.'
+    } catch (error_) {
+      error.value = error_ instanceof Error ? error_.message : String(error_)
+    } finally {
+      retranscribing.value = false
+    }
   }
 
   onMounted(async () => {
